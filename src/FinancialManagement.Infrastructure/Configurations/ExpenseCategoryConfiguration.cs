@@ -14,5 +14,43 @@ internal sealed class ExpenseCategoryConfiguration : IEntityTypeConfiguration<Ex
         builder.Property(category => category.Name).IsRequired();
 
         builder.HasIndex(category => category.Name).IsUnique();
+
+        var createdAtUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        builder.HasData(
+            new ExpenseCategory
+            {
+                Id = 1,
+                Name = "Salaires",
+                IsActive = true,
+                CreatedAtUtc = createdAtUtc
+            },
+            new ExpenseCategory
+            {
+                Id = 2,
+                Name = "Transport",
+                IsActive = true,
+                CreatedAtUtc = createdAtUtc
+            },
+            new ExpenseCategory
+            {
+                Id = 3,
+                Name = "Loyer",
+                IsActive = true,
+                CreatedAtUtc = createdAtUtc
+            },
+            new ExpenseCategory
+            {
+                Id = 4,
+                Name = "Factures",
+                IsActive = true,
+                CreatedAtUtc = createdAtUtc
+            },
+            new ExpenseCategory
+            {
+                Id = 5,
+                Name = "Divers",
+                IsActive = true,
+                CreatedAtUtc = createdAtUtc
+            });
     }
 }
