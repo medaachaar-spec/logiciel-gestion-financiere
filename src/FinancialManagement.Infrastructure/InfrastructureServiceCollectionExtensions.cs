@@ -1,5 +1,6 @@
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
+using FinancialManagement.Application.Backup;
 using FinancialManagement.Application.CustomerAdvances;
 using FinancialManagement.Application.CustomerPayments;
 using FinancialManagement.Application.Dashboard;
@@ -13,6 +14,7 @@ using FinancialManagement.Application.InitialCustomerReceivables;
 using FinancialManagement.Application.InitialSupplierPayables;
 using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
+using FinancialManagement.Infrastructure.Backup;
 using FinancialManagement.Infrastructure.CustomerAdvances;
 using FinancialManagement.Infrastructure.CustomerPayments;
 using FinancialManagement.Infrastructure.Dashboard;
@@ -63,6 +65,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITreasuryService, TreasuryService>();
         services.AddScoped<IFinancialDashboardService, FinancialDashboardService>();
         services.AddScoped<IFinancialDueAlertService, FinancialDueAlertService>();
+        services.TryAddSingleton<DatabaseBackupOptions>();
+        services.AddSingleton<DatabaseMaintenanceLock>();
+        services.AddSingleton<DatabaseRestoreTestHook>();
+        services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
 
         return services;
     }
