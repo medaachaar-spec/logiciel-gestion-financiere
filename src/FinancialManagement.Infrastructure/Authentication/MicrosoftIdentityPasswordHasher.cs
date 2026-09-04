@@ -21,10 +21,17 @@ internal sealed class MicrosoftIdentityPasswordHasher : IPasswordHasher
             return false;
         }
 
-        return _passwordHasher.VerifyHashedPassword(
-                PasswordHashOwner,
-                passwordHash,
-                providedPassword)
-            is not PasswordVerificationResult.Failed;
+        try
+        {
+            return _passwordHasher.VerifyHashedPassword(
+                    PasswordHashOwner,
+                    passwordHash,
+                    providedPassword)
+                is not PasswordVerificationResult.Failed;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 }

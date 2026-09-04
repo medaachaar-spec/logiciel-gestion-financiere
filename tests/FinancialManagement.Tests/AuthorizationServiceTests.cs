@@ -201,6 +201,59 @@ public sealed class AuthorizationServiceTests
     }
 
     [Fact]
+    public async Task Authentication_authorization_logout_and_responsable_flow_is_consistent()
+    {
+        using var database = new AuthorizationTestDatabase();
+        var employee = database.AddUser("flow-employee", UserRole.Employe);
+        database.AddPermission(employee, PermissionModule.Sales, true, true, false);
+
+        Assert.False(database.Session.IsAuthenticated);
+
+        await database.AuthenticateAsync(employee);
+        Assert.True(await database.AuthorizationService.CanAsync(
+            PermissionModule.Sales,
+            PermissionAction.View));
+        Assert.True(await database.AuthorizationService.CanAsync(
+            PermissionModule.Sales,
+            PermissionAction.Create));
+        Assert.False(await database.AuthorizationService.CanAsync(
+            PermissionModule.Purchases,
+            PermissionAction.View));
+
+        database.AuthenticationService.Logout();
+        Assert.False(await database.AuthorizationService.CanAsync(
+            PermissionModule.Sales,
+            PermissionAction.View));
+
+        var responsible = database.AddUser("flow-responsable", UserRole.Responsable);
+        await database.AuthenticateAsync(responsible);
+        Assert.True(await database.AuthorizationService.CanAsync(
+            PermissionModule.Purchases,
+            PermissionAction.Modify));
+        Assert.True(database.AuthorizationService.CanAccessResponsibleCapability(
+            ResponsibleCapability.Treasury));
+    }
+
+    [Fact]
+    public async Task Undefined_permission_values_are_denied_defensively()
+    {
+        using var database = new AuthorizationTestDatabase();
+        var responsible = database.AddUser("responsable", UserRole.Responsable);
+        await database.AuthenticateAsync(responsible);
+
+        Assert.False(await database.AuthorizationService.CanAsync(
+            (PermissionModule)999,
+            (PermissionAction)999));
+        var effectivePermissions = await database.AuthorizationService
+            .GetEffectivePermissionsAsync((PermissionModule)999);
+        Assert.False(effectivePermissions.CanView);
+        Assert.False(effectivePermissions.CanCreate);
+        Assert.False(effectivePermissions.CanModify);
+        Assert.False(database.AuthorizationService.CanAccessResponsibleCapability(
+            (ResponsibleCapability)999));
+    }
+
+    [Fact]
     public void PermissionAction_contains_only_validated_actions()
     {
         Assert.Equal(
@@ -275,6 +328,7 @@ public sealed class AuthorizationServiceTests
                 .GetRequiredService<IAuthenticationService>();
             AuthorizationService = _scope.ServiceProvider
                 .GetRequiredService<IAuthorizationService>();
+            Session = _scope.ServiceProvider.GetRequiredService<ICurrentUserSession>();
         }
 
         private FinancialManagementDbContext Context { get; }
@@ -284,6 +338,8 @@ public sealed class AuthorizationServiceTests
         public IAuthenticationService AuthenticationService { get; }
 
         public IAuthorizationService AuthorizationService { get; }
+
+        public ICurrentUserSession Session { get; }
 
         public User AddUser(string username, UserRole role)
         {

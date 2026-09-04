@@ -116,6 +116,23 @@ public sealed class AuthenticationServiceTests
         AssertAuthenticationFailed(failedResult, database.Session);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-password-hash")]
+    [InlineData("AQIDBA==")]
+    public async Task Invalid_stored_password_hash_is_a_safe_generic_failure(string invalidHash)
+    {
+        using var database = new AuthenticationTestDatabase();
+        var user = database.AddUser(Username, Password);
+        database.SetPasswordHash(user, invalidHash);
+
+        var exception = await Record.ExceptionAsync(() =>
+            database.AuthenticationService.AuthenticateAsync(Username, Password));
+
+        Assert.Null(exception);
+        AssertSessionIsEmpty(database.Session);
+    }
+
     private static void AssertAuthenticationFailed(
         AuthenticationResult result,
         ICurrentUserSession session)
@@ -192,6 +209,12 @@ public sealed class AuthenticationServiceTests
             Context.Users.Add(user);
             Context.SaveChanges();
             return user;
+        }
+
+        public void SetPasswordHash(User user, string passwordHash)
+        {
+            user.PasswordHash = passwordHash;
+            Context.SaveChanges();
         }
 
         public void Dispose()

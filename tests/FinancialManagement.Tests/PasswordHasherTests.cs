@@ -52,6 +52,23 @@ public sealed class PasswordHasherTests
         Assert.NotEqual(firstHash, secondHash);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-password-hash")]
+    [InlineData("AQIDBA==")]
+    public void VerifyPassword_rejects_invalid_hash_without_throwing(string invalidHash)
+    {
+        using var serviceProvider = CreateServiceProvider();
+        var passwordHasher = serviceProvider.GetRequiredService<IPasswordHasher>();
+
+        var exception = Record.Exception(() =>
+        {
+            Assert.False(passwordHasher.VerifyPassword(invalidHash, Password));
+        });
+
+        Assert.Null(exception);
+    }
+
     private static ServiceProvider CreateServiceProvider() =>
         new ServiceCollection()
             .AddInfrastructure("Data Source=:memory:")
