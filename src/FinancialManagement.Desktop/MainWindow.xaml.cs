@@ -9,9 +9,9 @@ namespace FinancialManagement.Desktop;
 /// </summary>
 public partial class MainWindow : Window
 {
-    public MainWindow()
+    public MainWindow(ShellViewModel viewModel)
     {
         InitializeComponent();
-        DataContext = new ShellViewModel();
+        DataContext = viewModel;
     }
 }

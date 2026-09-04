@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using FinancialManagement.Application.Authentication;
 
 namespace FinancialManagement.Desktop.ViewModels;
 
@@ -7,9 +8,13 @@ public sealed class ShellViewModel : ViewModelBase
 {
     private PlaceholderPageViewModel? _currentPage;
     private string _currentPageTitle = string.Empty;
+    private readonly ICurrentUserSession _currentUserSession;
 
-    public ShellViewModel()
+    public ShellViewModel(ICurrentUserSession currentUserSession)
     {
+        ArgumentNullException.ThrowIfNull(currentUserSession);
+        _currentUserSession = currentUserSession;
+
         NavigateCommand = new RelayCommand(
             parameter =>
             {
@@ -37,6 +42,8 @@ public sealed class ShellViewModel : ViewModelBase
     public ObservableCollection<NavigationItemViewModel> NavigationItems { get; } = [];
 
     public ICommand NavigateCommand { get; }
+
+    public string AuthenticatedUsername => _currentUserSession.Username ?? string.Empty;
 
     public PlaceholderPageViewModel? CurrentPage
     {
