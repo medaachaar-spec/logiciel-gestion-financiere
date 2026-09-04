@@ -50,16 +50,23 @@ public partial class App : System.Windows.Application
 
         try
         {
-            if (!ShowLogin(serviceProvider))
-            {
-                Shutdown();
-                return;
-            }
+            var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
 
-            var mainWindow = serviceProvider.GetRequiredService<MainWindow>();
-            MainWindow = mainWindow;
-            ShutdownMode = ShutdownMode.OnMainWindowClose;
-            mainWindow.Show();
+            while (true)
+            {
+                if (!ShowLogin(serviceProvider))
+                {
+                    Shutdown();
+                    return;
+                }
+
+                var shellCompleted = await ShowShellAsync(serviceProvider);
+                if (!shellCompleted)
+                {
+                    Shutdown();
+                    return;
+                }
+            }
         }
         catch (Exception exception)
         {
@@ -116,5 +123,37 @@ public partial class App : System.Windows.Application
         var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
 
         return loginSucceeded && currentUserSession.IsAuthenticated;
+    }
+
+    private async Task<bool> ShowShellAsync(ServiceProvider serviceProvider)
+    {
+        using var shellScope = serviceProvider.CreateScope();
+        var mainWindow = shellScope.ServiceProvider.GetRequiredService<MainWindow>();
+        var logoutRequested = false;
+
+        void HandleLogoutRequested(object? sender, EventArgs args) => logoutRequested = true;
+
+        mainWindow.LogoutRequested += HandleLogoutRequested;
+        try
+        {
+            var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
+            if (!currentUserSession.IsAuthenticated || !await mainWindow.InitializeAsync())
+            {
+                return false;
+            }
+
+            if (!currentUserSession.IsAuthenticated)
+            {
+                return false;
+            }
+
+            MainWindow = mainWindow;
+            mainWindow.ShowDialog();
+            return logoutRequested && !currentUserSession.IsAuthenticated;
+        }
+        finally
+        {
+            mainWindow.LogoutRequested -= HandleLogoutRequested;
+        }
     }
 }

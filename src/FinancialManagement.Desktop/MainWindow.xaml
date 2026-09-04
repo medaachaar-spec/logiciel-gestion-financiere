@@ -96,6 +96,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
@@ -123,6 +124,15 @@
                                    FontSize="14"
                                    FontWeight="SemiBold" />
                     </StackPanel>
+
+                    <Button Grid.Column="2"
+                            Width="126"
+                            Height="36"
+                            Margin="24,0,0,0"
+                            Content="Se déconnecter"
+                            Command="{Binding LogoutCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            AutomationProperties.Name="Se déconnecter" />
                 </Grid>
             </Border>
 

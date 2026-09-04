@@ -1,10 +1,12 @@
 using System.Windows.Input;
+using FinancialManagement.Application.Authorization;
+using FinancialManagement.Domain.Enums;
 
 namespace FinancialManagement.Desktop.ViewModels;
 
 public sealed class NavigationItemViewModel : ViewModelBase
 {
-    private bool _isVisible = true;
+    private bool _isVisible;
     private bool _isSelected;
 
     public NavigationItemViewModel(
@@ -12,13 +14,18 @@ public sealed class NavigationItemViewModel : ViewModelBase
         string iconGlyph,
         string pageKey,
         PlaceholderPageViewModel page,
-        ICommand command)
+        ICommand command,
+        PermissionModule? requiredModule = null,
+        ResponsibleCapability? requiredCapability = null)
     {
         Title = title;
         IconGlyph = iconGlyph;
         PageKey = pageKey;
         Page = page;
         Command = command;
+        RequiredModule = requiredModule;
+        RequiredAction = requiredModule.HasValue ? PermissionAction.View : null;
+        RequiredCapability = requiredCapability;
     }
 
     public string Title { get; }
@@ -31,7 +38,12 @@ public sealed class NavigationItemViewModel : ViewModelBase
 
     public ICommand Command { get; }
 
-    // Reserved for the future permission-aware navigation layer.
+    public PermissionModule? RequiredModule { get; }
+
+    public PermissionAction? RequiredAction { get; }
+
+    public ResponsibleCapability? RequiredCapability { get; }
+
     public bool IsVisible
     {
         get => _isVisible;
