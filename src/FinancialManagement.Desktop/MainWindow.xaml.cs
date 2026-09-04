@@ -1,13 +1,6 @@
 ﻿using System.Text;
 using System.Windows;
-using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Navigation;
-using System.Windows.Shapes;
+using FinancialManagement.Desktop.ViewModels;
 
 namespace FinancialManagement.Desktop;
 
@@ -16,8 +9,31 @@ namespace FinancialManagement.Desktop;
 /// </summary>
 public partial class MainWindow : Window
 {
-    public MainWindow()
+    private readonly ShellViewModel _viewModel;
+
+    public event EventHandler? LogoutRequested;
+
+    public MainWindow(ShellViewModel viewModel)
     {
+        ArgumentNullException.ThrowIfNull(viewModel);
         InitializeComponent();
+        _viewModel = viewModel;
+        DataContext = viewModel;
+        _viewModel.LogoutRequested += ViewModel_LogoutRequested;
+    }
+
+    public Task<bool> InitializeAsync(CancellationToken cancellationToken = default) =>
+        _viewModel.InitializeAsync(cancellationToken);
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _viewModel.LogoutRequested -= ViewModel_LogoutRequested;
+        base.OnClosed(e);
+    }
+
+    private void ViewModel_LogoutRequested(object? sender, EventArgs e)
+    {
+        LogoutRequested?.Invoke(this, EventArgs.Empty);
+        Close();
     }
 }

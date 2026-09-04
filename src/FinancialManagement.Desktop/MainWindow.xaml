@@ -1,12 +1,147 @@
 ﻿<Window x:Class="FinancialManagement.Desktop.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:FinancialManagement.Desktop"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="Gestion financière"
+        Width="1366"
+        Height="768"
+        MinWidth="1024"
+        MinHeight="640"
+        Background="{StaticResource BackgroundBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="248" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
+        <Border Grid.Column="0"
+                Background="{StaticResource SidebarBackgroundBrush}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="24,26,24,22">
+                    <TextBlock Text="GESTION"
+                               Foreground="{StaticResource PrimaryBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="financière"
+                               Foreground="White"
+                               FontSize="22"
+                               FontWeight="SemiBold" />
+                </StackPanel>
+
+                <Border Grid.Row="1"
+                        Height="1"
+                        Margin="24,0"
+                        Background="#354653" />
+
+                <ScrollViewer Grid.Row="2"
+                              Padding="16,18,16,18"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding NavigationItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button AutomationProperties.Name="{Binding Title}"
+                                        Command="{Binding Command}"
+                                        Style="{StaticResource NavigationButtonStyle}"
+                                        ToolTip="{Binding Title}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Width="24"
+                                                   Text="{Binding IconGlyph}"
+                                                   FontFamily="{StaticResource IconFontFamily}"
+                                                   FontSize="16"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding Title}"
+                                                   VerticalAlignment="Center"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Border Grid.Row="3"
+                        BorderBrush="#354653"
+                        BorderThickness="0,1,0,0"
+                        Padding="24,16,24,20">
+                    <TextBlock Text="Structure de navigation"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="11" />
+                </Border>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Column="1"
+              Background="{StaticResource BackgroundBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="78" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="32,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CurrentPageTitle}"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontSize="20"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Text="Fondation de navigation"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="12"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Right">
+                        <TextBlock Text="Session active"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   FontSize="11" />
+                        <TextBlock Text="{Binding AuthenticatedUsername}"
+                                   HorizontalAlignment="Right"
+                                   Margin="0,4,0,0"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   FontSize="14"
+                                   FontWeight="SemiBold" />
+                    </StackPanel>
+
+                    <Button Grid.Column="2"
+                            Width="126"
+                            Height="36"
+                            Margin="24,0,0,0"
+                            Content="Se déconnecter"
+                            Command="{Binding LogoutCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            AutomationProperties.Name="Se déconnecter" />
+                </Grid>
+            </Border>
+
+            <ScrollViewer Grid.Row="1"
+                          Padding="32"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <ContentControl Content="{Binding CurrentPage}" />
+            </ScrollViewer>
+        </Grid>
     </Grid>
 </Window>
