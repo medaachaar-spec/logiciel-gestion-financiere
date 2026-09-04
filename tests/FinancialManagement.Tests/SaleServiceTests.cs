@@ -563,5 +563,11 @@ public sealed class SaleServiceTests
 
         public string GenerateCustomerPaymentReference(DateOnly businessDate) =>
             CustomerPaymentReference;
+
+        public string GeneratePurchaseReference(DateOnly businessDate) =>
+            "ACH-20260204-ABCDEF123456";
+
+        public string GenerateSupplierPaymentReference(DateOnly businessDate) =>
+            "DEC-20260204-ABCDEF123456";
     }
 }

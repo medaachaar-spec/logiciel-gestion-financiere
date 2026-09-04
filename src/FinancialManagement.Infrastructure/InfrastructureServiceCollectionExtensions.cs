@@ -1,8 +1,10 @@
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
+using FinancialManagement.Application.Purchases;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
+using FinancialManagement.Infrastructure.Purchases;
 using FinancialManagement.Infrastructure.Sales;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +35,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IBusinessReferenceGenerator, BusinessReferenceGenerator>();
         services.AddScoped<ISaleService, SaleService>();
+        services.AddScoped<IPurchaseService, PurchaseService>();
 
         return services;
     }
