@@ -404,8 +404,10 @@ public sealed class SaleServiceTests
         Assert.Equal(allocatedAmountMinor, result.AllocatedAmountMinor);
         Assert.Equal(remainingReceivableMinor, result.RemainingReceivableMinor);
         Assert.Equal(unallocatedAdvanceMinor, result.UnallocatedAdvanceMinor);
+        var sale = database.Context.Sales.Single();
         var payment = database.Context.CustomerPayments.Single();
         var allocation = database.Context.CustomerPaymentAllocations.Single();
+        Assert.Equal(sale.ClientId, payment.ClientId);
         Assert.Equal(paymentAmountMinor, payment.AmountMinor);
         Assert.Equal(payment.Id, allocation.CustomerPaymentId);
         Assert.Equal(result.SaleId, allocation.SaleId);
