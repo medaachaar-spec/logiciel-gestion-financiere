@@ -675,5 +675,8 @@ public sealed class InitialObligationServiceTests
 
         public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
             $"DET-{historicalDate:yyyyMMdd}-{Interlocked.Increment(ref _supplierPayableSequence):X12}";
+
+        public string GenerateTreasuryTransferReference(DateOnly businessDate) =>
+            $"TRF-{businessDate:yyyyMMdd}-000000000001";
     }
 }

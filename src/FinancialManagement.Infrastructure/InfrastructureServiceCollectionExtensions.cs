@@ -6,6 +6,7 @@ using FinancialManagement.Application.Purchases;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Application.SupplierPayments;
 using FinancialManagement.Application.SupplierAdvances;
+using FinancialManagement.Application.Treasury;
 using FinancialManagement.Application.InitialCustomerReceivables;
 using FinancialManagement.Application.InitialSupplierPayables;
 using FinancialManagement.Infrastructure.Authentication;
@@ -16,6 +17,7 @@ using FinancialManagement.Infrastructure.Purchases;
 using FinancialManagement.Infrastructure.Sales;
 using FinancialManagement.Infrastructure.SupplierPayments;
 using FinancialManagement.Infrastructure.SupplierAdvances;
+using FinancialManagement.Infrastructure.Treasury;
 using FinancialManagement.Infrastructure.InitialCustomerReceivables;
 using FinancialManagement.Infrastructure.InitialSupplierPayables;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +56,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IInitialSupplierPayableService, InitialSupplierPayableService>();
         services.AddScoped<ICustomerAdvanceService, CustomerAdvanceService>();
         services.AddScoped<ISupplierAdvanceService, SupplierAdvanceService>();
+        services.AddScoped<ITreasuryService, TreasuryService>();
 
         return services;
     }

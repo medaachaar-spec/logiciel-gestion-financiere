@@ -24,6 +24,9 @@ internal sealed class BusinessReferenceGenerator : IBusinessReferenceGenerator
     public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
         Generate("DET", historicalDate);
 
+    public string GenerateTreasuryTransferReference(DateOnly businessDate) =>
+        Generate("TRF", businessDate);
+
     private static string Generate(string prefix, DateOnly businessDate) =>
         $"{prefix}-{businessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}-" +
         RandomNumberGenerator.GetHexString(12);

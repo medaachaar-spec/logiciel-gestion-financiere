@@ -45,11 +45,15 @@ public sealed class FinancialManagementMigrationTests
         database.Context.Database.Migrate();
 
         var appliedMigrations = database.Context.Database.GetAppliedMigrations().ToArray();
-        Assert.Equal(2, appliedMigrations.Length);
+        Assert.Equal(3, appliedMigrations.Length);
         Assert.EndsWith("_001_InitialSchema", appliedMigrations[0], StringComparison.Ordinal);
         Assert.EndsWith(
             "_002_AllowAnonymousSalePayments",
             appliedMigrations[1],
+            StringComparison.Ordinal);
+        Assert.EndsWith(
+            "_003_TreasuryOpeningBalanceSingleton",
+            appliedMigrations[2],
             StringComparison.Ordinal);
 
         var tables = database.Context.Database
@@ -78,8 +82,132 @@ public sealed class FinancialManagementMigrationTests
 
         database.Context.Database.Migrate();
 
-        Assert.Equal(2, database.Context.Database.GetAppliedMigrations().Count());
+        Assert.Equal(3, database.Context.Database.GetAppliedMigrations().Count());
         Assert.Equal(5, database.Context.ExpenseCategories.Count());
+    }
+
+    [Fact]
+    public void Third_migration_enforces_single_treasury_opening_balance_row()
+    {
+        using var database = new MigrationTestDatabase();
+        database.Context.Database.Migrate();
+        var user = AddMigrationUser(database.Context, "singleton-opening-user");
+
+        database.Context.TreasuryOpeningBalances.Add(new TreasuryOpeningBalance
+        {
+            OpeningDate = new DateOnly(2026, 1, 1),
+            CashAmountMinor = 1_000,
+            BankAmountMinor = 2_000,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        });
+        database.Context.SaveChanges();
+        database.Context.TreasuryOpeningBalances.Add(new TreasuryOpeningBalance
+        {
+            OpeningDate = new DateOnly(2026, 1, 2),
+            CashAmountMinor = 3_000,
+            BankAmountMinor = 4_000,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        });
+
+        var exception = Assert.Throws<DbUpdateException>(() =>
+            database.Context.SaveChanges());
+
+        var sqliteException = Assert.IsType<SqliteException>(exception.InnerException);
+        Assert.Equal(19, sqliteException.SqliteErrorCode);
+        Assert.Contains(
+            "UX_TreasuryOpeningBalance_Singleton",
+            sqliteException.Message,
+            StringComparison.Ordinal);
+        database.Context.ChangeTracker.Clear();
+        Assert.Single(database.Context.TreasuryOpeningBalances.AsNoTracking());
+    }
+
+    [Fact]
+    public void Third_migration_refuses_existing_duplicate_opening_rows_without_data_loss()
+    {
+        using var database = new MigrationTestDatabase();
+        var migrations = database.Context.Database.GetMigrations().ToArray();
+        var secondMigration = migrations.Single(migration =>
+            migration.EndsWith("_002_AllowAnonymousSalePayments", StringComparison.Ordinal));
+        var thirdMigration = migrations.Single(migration =>
+            migration.EndsWith("_003_TreasuryOpeningBalanceSingleton", StringComparison.Ordinal));
+        var migrator = database.Context.GetService<IMigrator>();
+        migrator.Migrate(secondMigration);
+        var user = AddMigrationUser(database.Context, "duplicate-opening-user");
+        database.Context.TreasuryOpeningBalances.AddRange(
+            new TreasuryOpeningBalance
+            {
+                OpeningDate = new DateOnly(2026, 1, 1),
+                CashAmountMinor = 1_000,
+                BankAmountMinor = 2_000,
+                CreatedByUserId = user.Id,
+                CreatedAtUtc = SeedTimestamp
+            },
+            new TreasuryOpeningBalance
+            {
+                OpeningDate = new DateOnly(2026, 1, 2),
+                CashAmountMinor = 3_000,
+                BankAmountMinor = 4_000,
+                CreatedByUserId = user.Id,
+                CreatedAtUtc = SeedTimestamp
+            });
+        database.Context.SaveChanges();
+        database.Context.ChangeTracker.Clear();
+
+        var exception = Assert.Throws<SqliteException>(() =>
+            migrator.Migrate(thirdMigration));
+
+        Assert.Equal(19, exception.SqliteErrorCode);
+        Assert.Equal(2, database.Context.TreasuryOpeningBalances.AsNoTracking().Count());
+        Assert.DoesNotContain(
+            thirdMigration,
+            database.Context.Database.GetAppliedMigrations());
+        Assert.Equal(2, database.Context.Database.GetAppliedMigrations().Count());
+    }
+
+    [Fact]
+    public void Downgrade_from_third_migration_drops_only_singleton_index()
+    {
+        using var database = new MigrationTestDatabase();
+        database.Context.Database.Migrate();
+        var migrations = database.Context.Database.GetMigrations().ToArray();
+        var secondMigration = migrations.Single(migration =>
+            migration.EndsWith("_002_AllowAnonymousSalePayments", StringComparison.Ordinal));
+        var migrator = database.Context.GetService<IMigrator>();
+        var user = AddMigrationUser(database.Context, "opening-downgrade-user");
+        var original = new TreasuryOpeningBalance
+        {
+            OpeningDate = new DateOnly(2026, 1, 1),
+            CashAmountMinor = -100,
+            BankAmountMinor = 200,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        };
+        database.Context.TreasuryOpeningBalances.Add(original);
+        database.Context.SaveChanges();
+        var originalId = original.Id;
+        database.Context.ChangeTracker.Clear();
+
+        migrator.Migrate(secondMigration);
+
+        var preserved = database.Context.TreasuryOpeningBalances
+            .AsNoTracking()
+            .Single(item => item.Id == originalId);
+        Assert.Equal(-100, preserved.CashAmountMinor);
+        Assert.Equal(200, preserved.BankAmountMinor);
+        database.Context.TreasuryOpeningBalances.Add(new TreasuryOpeningBalance
+        {
+            OpeningDate = new DateOnly(2026, 1, 2),
+            CashAmountMinor = 300,
+            BankAmountMinor = 400,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        });
+        database.Context.SaveChanges();
+        Assert.Equal(2, database.Context.TreasuryOpeningBalances.Count());
+        Assert.Equal(2, database.Context.Database.GetAppliedMigrations().Count());
     }
 
     [Fact]
@@ -295,6 +423,25 @@ public sealed class FinancialManagementMigrationTests
         });
 
         Assert.Throws<DbUpdateException>(() => database.Context.SaveChanges());
+    }
+
+    private static User AddMigrationUser(
+        FinancialManagementDbContext context,
+        string username)
+    {
+        var user = new User
+        {
+            FullName = "Migration Treasury User",
+            Username = username,
+            PasswordHash = "test-hash",
+            Role = UserRole.Responsable,
+            IsActive = true,
+            CreatedAtUtc = SeedTimestamp,
+            UpdatedAtUtc = SeedTimestamp
+        };
+        context.Users.Add(user);
+        context.SaveChanges();
+        return user;
     }
 
     private sealed class MigrationTestDatabase : IDisposable

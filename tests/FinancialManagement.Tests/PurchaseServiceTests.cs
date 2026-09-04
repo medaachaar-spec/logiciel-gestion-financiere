@@ -552,5 +552,8 @@ public sealed class PurchaseServiceTests
 
         public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
             "DET-20260101-ABCDEF123456";
+
+        public string GenerateTreasuryTransferReference(DateOnly businessDate) =>
+            "TRF-20260101-ABCDEF123456";
     }
 }
