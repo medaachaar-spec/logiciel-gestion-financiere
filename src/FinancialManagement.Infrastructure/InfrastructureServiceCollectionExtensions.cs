@@ -2,6 +2,7 @@ using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
 using FinancialManagement.Application.CustomerAdvances;
 using FinancialManagement.Application.CustomerPayments;
+using FinancialManagement.Application.Dashboard;
 using FinancialManagement.Application.Purchases;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Application.SupplierPayments;
@@ -13,6 +14,7 @@ using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
 using FinancialManagement.Infrastructure.CustomerAdvances;
 using FinancialManagement.Infrastructure.CustomerPayments;
+using FinancialManagement.Infrastructure.Dashboard;
 using FinancialManagement.Infrastructure.Purchases;
 using FinancialManagement.Infrastructure.Sales;
 using FinancialManagement.Infrastructure.SupplierPayments;
@@ -57,6 +59,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ICustomerAdvanceService, CustomerAdvanceService>();
         services.AddScoped<ISupplierAdvanceService, SupplierAdvanceService>();
         services.AddScoped<ITreasuryService, TreasuryService>();
+        services.AddScoped<IFinancialDashboardService, FinancialDashboardService>();
 
         return services;
     }
