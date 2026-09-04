@@ -25,6 +25,7 @@ internal sealed class CustomerPaymentConfiguration : IEntityTypeConfiguration<Cu
         builder.HasOne<Client>()
             .WithMany(client => client.CustomerPayments)
             .HasForeignKey(payment => payment.ClientId)
+            .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne<User>()

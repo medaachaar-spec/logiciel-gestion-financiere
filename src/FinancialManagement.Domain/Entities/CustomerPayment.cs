@@ -6,7 +6,7 @@ public sealed class CustomerPayment
 {
     public long Id { get; set; }
     public string Reference { get; set; } = string.Empty;
-    public long ClientId { get; set; }
+    public long? ClientId { get; set; }
     public DateOnly PaymentDate { get; set; }
     public long AmountMinor { get; set; }
     public PaymentMethod PaymentMethod { get; set; }

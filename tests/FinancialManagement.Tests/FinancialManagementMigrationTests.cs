@@ -1,7 +1,10 @@
 using FinancialManagement.Domain.Entities;
 using FinancialManagement.Domain.Enums;
 using FinancialManagement.Infrastructure;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FinancialManagement.Tests;
@@ -33,7 +36,7 @@ public sealed class FinancialManagementMigrationTests
     ];
 
     [Fact]
-    public void Initial_migration_creates_expected_schema_and_seed_idempotently()
+    public void All_migrations_create_expected_schema_and_seed_idempotently()
     {
         using var database = new MigrationTestDatabase();
 
@@ -42,8 +45,12 @@ public sealed class FinancialManagementMigrationTests
         database.Context.Database.Migrate();
 
         var appliedMigrations = database.Context.Database.GetAppliedMigrations().ToArray();
-        Assert.Single(appliedMigrations);
+        Assert.Equal(2, appliedMigrations.Length);
         Assert.EndsWith("_001_InitialSchema", appliedMigrations[0], StringComparison.Ordinal);
+        Assert.EndsWith(
+            "_002_AllowAnonymousSalePayments",
+            appliedMigrations[1],
+            StringComparison.Ordinal);
 
         var tables = database.Context.Database
             .SqlQueryRaw<string>(
@@ -71,8 +78,193 @@ public sealed class FinancialManagementMigrationTests
 
         database.Context.Database.Migrate();
 
-        Assert.Single(database.Context.Database.GetAppliedMigrations());
+        Assert.Equal(2, database.Context.Database.GetAppliedMigrations().Count());
         Assert.Equal(5, database.Context.ExpenseCategories.Count());
+    }
+
+    [Fact]
+    public void Second_migration_preserves_existing_payment_and_allows_null_client()
+    {
+        using var database = new MigrationTestDatabase();
+        var migrations = database.Context.Database.GetMigrations().ToArray();
+        var initialMigration = migrations.Single(migration =>
+            migration.EndsWith("_001_InitialSchema", StringComparison.Ordinal));
+        var anonymousPaymentsMigration = migrations.Single(migration =>
+            migration.EndsWith("_002_AllowAnonymousSalePayments", StringComparison.Ordinal));
+        var migrator = database.Context.GetService<IMigrator>();
+
+        migrator.Migrate(initialMigration);
+
+        var user = new User
+        {
+            FullName = "Migration Compatibility User",
+            Username = "migration-compatibility-user",
+            PasswordHash = "test-hash",
+            Role = UserRole.Responsable,
+            IsActive = true,
+            CreatedAtUtc = SeedTimestamp,
+            UpdatedAtUtc = SeedTimestamp
+        };
+        var client = new Client
+        {
+            Name = "Migration Compatibility Client",
+            CreatedAtUtc = SeedTimestamp,
+            UpdatedAtUtc = SeedTimestamp
+        };
+        database.Context.AddRange(user, client);
+        database.Context.SaveChanges();
+        var existingPayment = new CustomerPayment
+        {
+            Reference = "PAYMENT-BEFORE-002",
+            ClientId = client.Id,
+            PaymentDate = new DateOnly(2026, 1, 2),
+            AmountMinor = 1_000,
+            PaymentMethod = PaymentMethod.Cash,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        };
+        database.Context.CustomerPayments.Add(existingPayment);
+        database.Context.SaveChanges();
+        var existingPaymentId = existingPayment.Id;
+        var existingClientId = client.Id;
+        database.Context.ChangeTracker.Clear();
+
+        migrator.Migrate(anonymousPaymentsMigration);
+
+        var preservedPayment = database.Context.CustomerPayments
+            .Single(payment => payment.Id == existingPaymentId);
+        Assert.Equal(existingClientId, preservedPayment.ClientId);
+
+        database.Context.CustomerPayments.Add(new CustomerPayment
+        {
+            Reference = "PAYMENT-AFTER-002-ANONYMOUS",
+            ClientId = null,
+            PaymentDate = new DateOnly(2026, 1, 3),
+            AmountMinor = 1_000,
+            PaymentMethod = PaymentMethod.BankTransfer,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        });
+        database.Context.SaveChanges();
+
+        Assert.Equal(2, database.Context.CustomerPayments.Count());
+        Assert.Contains(
+            database.Context.CustomerPayments,
+            payment => payment.Reference == "PAYMENT-AFTER-002-ANONYMOUS"
+                && payment.ClientId == null);
+    }
+
+    [Fact]
+    public void Downgrade_to_initial_schema_preserves_payments_when_no_client_id_is_null()
+    {
+        using var database = new MigrationTestDatabase();
+        database.Context.Database.Migrate();
+        var initialMigration = database.Context.Database.GetMigrations().Single(migration =>
+            migration.EndsWith("_001_InitialSchema", StringComparison.Ordinal));
+        var migrator = database.Context.GetService<IMigrator>();
+        var user = new User
+        {
+            FullName = "Safe Downgrade User",
+            Username = "safe-downgrade-user",
+            PasswordHash = "test-hash",
+            Role = UserRole.Responsable,
+            IsActive = true,
+            CreatedAtUtc = SeedTimestamp,
+            UpdatedAtUtc = SeedTimestamp
+        };
+        var client = new Client
+        {
+            Name = "Safe Downgrade Client",
+            CreatedAtUtc = SeedTimestamp,
+            UpdatedAtUtc = SeedTimestamp
+        };
+        database.Context.AddRange(user, client);
+        database.Context.SaveChanges();
+        var payment = new CustomerPayment
+        {
+            Reference = "PAYMENT-SAFE-DOWNGRADE",
+            ClientId = client.Id,
+            PaymentDate = new DateOnly(2026, 1, 2),
+            AmountMinor = 1_000,
+            PaymentMethod = PaymentMethod.Cash,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        };
+        database.Context.CustomerPayments.Add(payment);
+        database.Context.SaveChanges();
+        var paymentId = payment.Id;
+        var clientId = client.Id;
+        database.Context.ChangeTracker.Clear();
+
+        migrator.Migrate(initialMigration);
+
+        var appliedMigration = Assert.Single(
+            database.Context.Database.GetAppliedMigrations());
+        Assert.Equal(initialMigration, appliedMigration);
+        var preservedPayment = database.Context.CustomerPayments
+            .AsNoTracking()
+            .Single(item => item.Id == paymentId);
+        Assert.Equal(clientId, preservedPayment.ClientId);
+    }
+
+    [Fact]
+    public void Downgrade_to_initial_schema_is_refused_without_altering_anonymous_payment()
+    {
+        using var database = new MigrationTestDatabase();
+        database.Context.Database.Migrate();
+        var migrations = database.Context.Database.GetMigrations().ToArray();
+        var initialMigration = migrations.Single(migration =>
+            migration.EndsWith("_001_InitialSchema", StringComparison.Ordinal));
+        var anonymousPaymentsMigration = migrations.Single(migration =>
+            migration.EndsWith("_002_AllowAnonymousSalePayments", StringComparison.Ordinal));
+        var migrator = database.Context.GetService<IMigrator>();
+        var user = new User
+        {
+            FullName = "Blocked Downgrade User",
+            Username = "blocked-downgrade-user",
+            PasswordHash = "test-hash",
+            Role = UserRole.Responsable,
+            IsActive = true,
+            CreatedAtUtc = SeedTimestamp,
+            UpdatedAtUtc = SeedTimestamp
+        };
+        database.Context.Users.Add(user);
+        database.Context.SaveChanges();
+        var anonymousPayment = new CustomerPayment
+        {
+            Reference = "PAYMENT-BLOCKED-DOWNGRADE",
+            ClientId = null,
+            PaymentDate = new DateOnly(2026, 1, 2),
+            AmountMinor = 1_000,
+            PaymentMethod = PaymentMethod.Cash,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = SeedTimestamp
+        };
+        database.Context.CustomerPayments.Add(anonymousPayment);
+        database.Context.SaveChanges();
+        var paymentId = anonymousPayment.Id;
+        database.Context.ChangeTracker.Clear();
+
+        var exception = Assert.Throws<SqliteException>(() =>
+            migrator.Migrate(initialMigration));
+
+        Assert.Equal(19, exception.SqliteErrorCode);
+        Assert.Contains(
+            "CK_CustomerPayments_ClientId_DowngradeGuard",
+            exception.Message,
+            StringComparison.Ordinal);
+        Assert.True(database.Context.Database.CanConnect());
+        Assert.Equal(
+            [initialMigration, anonymousPaymentsMigration],
+            database.Context.Database.GetAppliedMigrations());
+        var preservedPayment = database.Context.CustomerPayments
+            .AsNoTracking()
+            .Single(item => item.Id == paymentId);
+        Assert.Null(preservedPayment.ClientId);
+        Assert.DoesNotContain(
+            database.Context.CustomerPayments.AsNoTracking(),
+            item => item.ClientId == 0);
+        Assert.Empty(database.Context.Clients.AsNoTracking());
     }
 
     [Fact]
