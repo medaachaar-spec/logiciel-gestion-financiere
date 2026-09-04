@@ -100,6 +100,16 @@ public sealed class DomainModelTests
             property => IsForbiddenNumericType(property.PropertyType));
     }
 
+    [Fact]
+    public void Customer_payment_client_id_is_nullable()
+    {
+        var clientIdProperty = typeof(CustomerPayment)
+            .GetProperty(nameof(CustomerPayment.ClientId));
+
+        Assert.NotNull(clientIdProperty);
+        Assert.Equal(typeof(long?), clientIdProperty.PropertyType);
+    }
+
     private static bool IsForbiddenNumericType(Type type)
     {
         var underlyingType = Nullable.GetUnderlyingType(type) ?? type;

@@ -92,6 +92,48 @@ public sealed class FinancialManagementSchemaTests
         Assert.Equal(expectedTables.Order(StringComparer.Ordinal), actualTables);
     }
 
+    [Fact]
+    public void Customer_payment_client_relation_is_optional_and_restrictive()
+    {
+        using var database = new TestDatabase();
+        var entityType = database.Context.Model.FindEntityType(typeof(CustomerPayment));
+
+        Assert.NotNull(entityType);
+        var clientIdProperty = entityType.FindProperty(nameof(CustomerPayment.ClientId));
+        Assert.NotNull(clientIdProperty);
+        Assert.True(clientIdProperty.IsNullable);
+
+        var clientForeignKey = entityType.GetForeignKeys()
+            .Single(foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Client));
+        Assert.False(clientForeignKey.IsRequired);
+        Assert.Equal(DeleteBehavior.Restrict, clientForeignKey.DeleteBehavior);
+    }
+
+    [Fact]
+    public void Customer_payment_without_client_can_be_persisted()
+    {
+        using var database = new TestDatabase();
+        var user = CreateUser("anonymous-payment-user");
+        database.Context.Users.Add(user);
+        database.Context.SaveChanges();
+        database.Context.CustomerPayments.Add(new CustomerPayment
+        {
+            Reference = "CUSTOMER-PAYMENT-ANONYMOUS",
+            ClientId = null,
+            PaymentDate = new DateOnly(2026, 1, 2),
+            AmountMinor = 1_000,
+            PaymentMethod = PaymentMethod.Cash,
+            CreatedByUserId = user.Id,
+            CreatedAtUtc = Timestamp
+        });
+
+        database.Context.SaveChanges();
+        database.Context.ChangeTracker.Clear();
+
+        var persistedPayment = database.Context.CustomerPayments.Single();
+        Assert.Null(persistedPayment.ClientId);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]
