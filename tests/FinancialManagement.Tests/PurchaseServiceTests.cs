@@ -546,5 +546,11 @@ public sealed class PurchaseServiceTests
 
         public string GenerateSupplierPaymentReference(DateOnly businessDate) =>
             SupplierPaymentReference;
+
+        public string GenerateInitialCustomerReceivableReference(DateOnly historicalDate) =>
+            "CRE-20260101-ABCDEF123456";
+
+        public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
+            "DET-20260101-ABCDEF123456";
     }
 }

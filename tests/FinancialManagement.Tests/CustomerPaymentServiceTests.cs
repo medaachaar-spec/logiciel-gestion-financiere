@@ -1074,6 +1074,12 @@ public sealed class CustomerPaymentServiceTests
 
         public string GenerateSupplierPaymentReference(DateOnly businessDate) =>
             "DEC-20260204-000000000001";
+
+        public string GenerateInitialCustomerReceivableReference(DateOnly historicalDate) =>
+            $"CRE-{historicalDate:yyyyMMdd}-000000000001";
+
+        public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
+            $"DET-{historicalDate:yyyyMMdd}-000000000001";
     }
 
     private sealed record ConcurrentPaymentAttempt(

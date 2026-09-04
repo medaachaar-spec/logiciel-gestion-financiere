@@ -4,12 +4,16 @@ using FinancialManagement.Application.CustomerPayments;
 using FinancialManagement.Application.Purchases;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Application.SupplierPayments;
+using FinancialManagement.Application.InitialCustomerReceivables;
+using FinancialManagement.Application.InitialSupplierPayables;
 using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
 using FinancialManagement.Infrastructure.CustomerPayments;
 using FinancialManagement.Infrastructure.Purchases;
 using FinancialManagement.Infrastructure.Sales;
 using FinancialManagement.Infrastructure.SupplierPayments;
+using FinancialManagement.Infrastructure.InitialCustomerReceivables;
+using FinancialManagement.Infrastructure.InitialSupplierPayables;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -42,6 +46,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IPurchaseService, PurchaseService>();
         services.AddScoped<ICustomerPaymentService, CustomerPaymentService>();
         services.AddScoped<ISupplierPaymentService, SupplierPaymentService>();
+        services.AddScoped<IInitialCustomerReceivableService, InitialCustomerReceivableService>();
+        services.AddScoped<IInitialSupplierPayableService, InitialSupplierPayableService>();
 
         return services;
     }
