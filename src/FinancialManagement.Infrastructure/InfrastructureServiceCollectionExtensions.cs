@@ -3,11 +3,13 @@ using FinancialManagement.Application.Authorization;
 using FinancialManagement.Application.CustomerPayments;
 using FinancialManagement.Application.Purchases;
 using FinancialManagement.Application.Sales;
+using FinancialManagement.Application.SupplierPayments;
 using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
 using FinancialManagement.Infrastructure.CustomerPayments;
 using FinancialManagement.Infrastructure.Purchases;
 using FinancialManagement.Infrastructure.Sales;
+using FinancialManagement.Infrastructure.SupplierPayments;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -39,6 +41,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISaleService, SaleService>();
         services.AddScoped<IPurchaseService, PurchaseService>();
         services.AddScoped<ICustomerPaymentService, CustomerPaymentService>();
+        services.AddScoped<ISupplierPaymentService, SupplierPaymentService>();
 
         return services;
     }
