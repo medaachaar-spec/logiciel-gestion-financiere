@@ -1,5 +1,7 @@
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.CustomerPayments;
+using FinancialManagement.Application.CustomerAdvances;
+using FinancialManagement.Application.InitialCustomerReceivables;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Domain.Entities;
 using FinancialManagement.Domain.Enums;
@@ -746,6 +748,156 @@ public sealed class CustomerPaymentServiceTests
     }
 
     [Fact]
+    public async Task Concurrent_standalone_payment_and_customer_advance_cannot_overallocate_same_sale()
+    {
+        using var database = new CustomerPaymentServiceTestDatabase();
+        var user = database.AddUser("cross-workflow-customer", UserRole.Responsable);
+        var client = database.AddClient("Cross Workflow Customer");
+        var sale = database.AddSale(user, client, 1_000);
+        var sourcePayment = database.AddExistingPayment(user, client, 1_000);
+        await database.AuthenticateAsync(user);
+
+        using var standaloneScope = database.CreateIndependentScope();
+        using var advanceScope = database.CreateIndependentScope();
+        var standaloneContext = standaloneScope.ServiceProvider
+            .GetRequiredService<FinancialManagementDbContext>();
+        var advanceContext = advanceScope.ServiceProvider
+            .GetRequiredService<FinancialManagementDbContext>();
+        await standaloneContext.Database.OpenConnectionAsync();
+        await advanceContext.Database.OpenConnectionAsync();
+        Assert.NotSame(
+            standaloneContext.Database.GetDbConnection(),
+            advanceContext.Database.GetDbConnection());
+
+        var standaloneService = standaloneScope.ServiceProvider
+            .GetRequiredService<ICustomerPaymentService>();
+        var advanceService = advanceScope.ServiceProvider
+            .GetRequiredService<ICustomerAdvanceService>();
+        var startGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var standaloneTask = Task.Run(async () =>
+        {
+            await startGate.Task;
+            return await CaptureAttemptAsync(
+                standaloneService,
+                CreateCommand(client.Id, 1_000, SaleAllocation(sale.Id, 1_000)));
+        });
+        var advanceTask = Task.Run(async () =>
+        {
+            await startGate.Task;
+            return await CaptureAdvanceAttemptAsync(
+                advanceService,
+                new ApplyCustomerAdvanceCommand(
+                    sourcePayment.Id,
+                    [new CustomerAdvanceAllocationInput(sale.Id, null, 1_000)]));
+        });
+
+        startGate.SetResult();
+        var standaloneAttempt = await standaloneTask;
+        var advanceAttempt = await advanceTask;
+        standaloneContext.Database.CloseConnection();
+        advanceContext.Database.CloseConnection();
+
+        using var verificationScope = database.CreateIndependentScope();
+        var verificationContext = verificationScope.ServiceProvider
+            .GetRequiredService<FinancialManagementDbContext>();
+        var finalAllocatedMinor = await verificationContext.CustomerPaymentAllocations
+            .AsNoTracking()
+            .Where(allocation => allocation.SaleId == sale.Id)
+            .SumAsync(allocation => allocation.AmountMinor);
+
+        Assert.True(finalAllocatedMinor <= sale.TotalAmountMinor);
+        var successfulWorkflows =
+            (standaloneAttempt.Result?.Success == true ? 1 : 0)
+            + (advanceAttempt.Result?.Success == true ? 1 : 0);
+        Assert.Equal(
+            successfulWorkflows,
+            await verificationContext.CustomerPaymentAllocations
+                .AsNoTracking()
+                .CountAsync(allocation => allocation.SaleId == sale.Id));
+        Assert.Equal(
+            1 + (standaloneAttempt.Result?.Success == true ? 1 : 0),
+            await verificationContext.CustomerPayments
+                .AsNoTracking()
+                .CountAsync(payment => payment.ClientId == client.Id));
+    }
+
+    [Fact]
+    public async Task Customer_financial_workflow_remains_consistent_across_payment_sources()
+    {
+        using var database = new CustomerPaymentServiceTestDatabase();
+        var user = database.AddUser("customer-chain", UserRole.Responsable);
+        var client = database.AddClient("Customer Chain");
+        await database.AuthenticateAsync(user);
+        using var workflowScope = database.CreateIndependentScope();
+        var advanceService = workflowScope.ServiceProvider
+            .GetRequiredService<ICustomerAdvanceService>();
+        var receivableService = workflowScope.ServiceProvider
+            .GetRequiredService<IInitialCustomerReceivableService>();
+
+        var saleResult = await database.SaleService.CreateAsync(new CreateSaleCommand(
+            client.Id,
+            1_000,
+            null,
+            null,
+            new InitialCustomerPaymentInput(200, PaymentMethod.Cash, null)));
+        Assert.True(saleResult.Success);
+
+        var standaloneResult = await database.CustomerPaymentService.CreateAsync(
+            CreateCommand(client.Id, 500, SaleAllocation(saleResult.SaleId!.Value, 400)));
+        Assert.True(standaloneResult.Success);
+
+        var firstAdvance = await advanceService.ApplyAsync(new ApplyCustomerAdvanceCommand(
+            standaloneResult.CustomerPaymentId!.Value,
+            [new CustomerAdvanceAllocationInput(saleResult.SaleId.Value, null, 100)]));
+        Assert.True(firstAdvance.Success);
+
+        var receivableResult = await receivableService.CreateAsync(
+            new CreateInitialCustomerReceivableCommand(
+                client.Id,
+                600,
+                WorkflowLocalDate.AddDays(-30),
+                null,
+                null));
+        Assert.True(receivableResult.Success);
+
+        var secondPayment = await database.CustomerPaymentService.CreateAsync(
+            CreateCommand(
+                client.Id,
+                700,
+                SaleAllocation(saleResult.SaleId.Value, 300),
+                ReceivableAllocation(receivableResult.InitialCustomerReceivableId!.Value, 300)));
+        Assert.True(secondPayment.Success);
+
+        var secondAdvance = await advanceService.ApplyAsync(new ApplyCustomerAdvanceCommand(
+            secondPayment.CustomerPaymentId!.Value,
+            [new CustomerAdvanceAllocationInput(
+                null,
+                receivableResult.InitialCustomerReceivableId.Value,
+                100)]));
+        Assert.True(secondAdvance.Success);
+
+        using var verificationScope = database.CreateIndependentScope();
+        var context = verificationScope.ServiceProvider
+            .GetRequiredService<FinancialManagementDbContext>();
+        Assert.Equal(
+            1_000,
+            await context.CustomerPaymentAllocations
+                .Where(allocation => allocation.SaleId == saleResult.SaleId)
+                .SumAsync(allocation => allocation.AmountMinor));
+        Assert.Equal(
+            400,
+            await context.CustomerPaymentAllocations
+                .Where(allocation => allocation.InitialCustomerReceivableId
+                    == receivableResult.InitialCustomerReceivableId)
+                .SumAsync(allocation => allocation.AmountMinor));
+        var secondPaymentAllocated = await context.CustomerPaymentAllocations
+            .Where(allocation => allocation.CustomerPaymentId == secondPayment.CustomerPaymentId)
+            .SumAsync(allocation => allocation.AmountMinor);
+        Assert.Equal(700, secondPaymentAllocated);
+    }
+
+    [Fact]
     public void Default_reference_generator_keeps_enc_format()
     {
         using var serviceProvider = new ServiceCollection()
@@ -771,6 +923,20 @@ public sealed class CustomerPaymentServiceTests
         catch (Exception exception)
         {
             return new ConcurrentPaymentAttempt(Result: null, exception);
+        }
+    }
+
+    private static async Task<ConcurrentAdvanceAttempt> CaptureAdvanceAttemptAsync(
+        ICustomerAdvanceService service,
+        ApplyCustomerAdvanceCommand command)
+    {
+        try
+        {
+            return new ConcurrentAdvanceAttempt(await service.ApplyAsync(command), null);
+        }
+        catch (Exception exception)
+        {
+            return new ConcurrentAdvanceAttempt(null, exception);
         }
     }
 
@@ -1084,5 +1250,9 @@ public sealed class CustomerPaymentServiceTests
 
     private sealed record ConcurrentPaymentAttempt(
         CreateCustomerPaymentResult? Result,
+        Exception? Exception);
+
+    private sealed record ConcurrentAdvanceAttempt(
+        ApplyCustomerAdvanceResult? Result,
         Exception? Exception);
 }
