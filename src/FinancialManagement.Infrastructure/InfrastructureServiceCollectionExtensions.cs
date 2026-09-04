@@ -1,21 +1,29 @@
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
+using FinancialManagement.Application.Backup;
 using FinancialManagement.Application.CustomerAdvances;
 using FinancialManagement.Application.CustomerPayments;
+using FinancialManagement.Application.Dashboard;
+using FinancialManagement.Application.Alerts;
 using FinancialManagement.Application.Purchases;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Application.SupplierPayments;
 using FinancialManagement.Application.SupplierAdvances;
+using FinancialManagement.Application.Treasury;
 using FinancialManagement.Application.InitialCustomerReceivables;
 using FinancialManagement.Application.InitialSupplierPayables;
 using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
+using FinancialManagement.Infrastructure.Backup;
 using FinancialManagement.Infrastructure.CustomerAdvances;
 using FinancialManagement.Infrastructure.CustomerPayments;
+using FinancialManagement.Infrastructure.Dashboard;
+using FinancialManagement.Infrastructure.Alerts;
 using FinancialManagement.Infrastructure.Purchases;
 using FinancialManagement.Infrastructure.Sales;
 using FinancialManagement.Infrastructure.SupplierPayments;
 using FinancialManagement.Infrastructure.SupplierAdvances;
+using FinancialManagement.Infrastructure.Treasury;
 using FinancialManagement.Infrastructure.InitialCustomerReceivables;
 using FinancialManagement.Infrastructure.InitialSupplierPayables;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +62,13 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IInitialSupplierPayableService, InitialSupplierPayableService>();
         services.AddScoped<ICustomerAdvanceService, CustomerAdvanceService>();
         services.AddScoped<ISupplierAdvanceService, SupplierAdvanceService>();
+        services.AddScoped<ITreasuryService, TreasuryService>();
+        services.AddScoped<IFinancialDashboardService, FinancialDashboardService>();
+        services.AddScoped<IFinancialDueAlertService, FinancialDueAlertService>();
+        services.TryAddSingleton<DatabaseBackupOptions>();
+        services.AddSingleton<DatabaseMaintenanceLock>();
+        services.AddSingleton<DatabaseRestoreTestHook>();
+        services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
 
         return services;
     }

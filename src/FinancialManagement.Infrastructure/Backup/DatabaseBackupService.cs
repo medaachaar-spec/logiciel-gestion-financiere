@@ -1,0 +1,632 @@
+using System.Security.Cryptography;
+using FinancialManagement.Application.Authentication;
+using FinancialManagement.Application.Authorization;
+using FinancialManagement.Application.Backup;
+using FinancialManagement.Domain.Enums;
+using FinancialManagement.Infrastructure.Authentication;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace FinancialManagement.Infrastructure.Backup;
+
+internal sealed class DatabaseBackupService(
+    FinancialManagementDbContext dbContext,
+    CurrentUserSession currentUserSession,
+    IAuthorizationService authorizationService,
+    DatabaseBackupOptions options,
+    DatabaseMaintenanceLock maintenanceLock,
+    DatabaseRestoreTestHook restoreTestHook,
+    TimeProvider timeProvider,
+    ILogger<DatabaseBackupService>? logger = null) : IDatabaseBackupService
+{
+    private const string CurrentSingletonIndex = "UX_TreasuryOpeningBalance_Singleton";
+    private const string MigrationHistoryTable = "__EFMigrationsHistory";
+
+    public Task<CreateDatabaseBackupResult> CreateLocalBackupAsync(
+        CancellationToken cancellationToken = default) =>
+        CreateBackupAsync(options.LocalBackupDirectory, createDirectory: true, "Backup", cancellationToken);
+
+    public Task<CreateDatabaseBackupResult> CreateExternalBackupAsync(
+        CreateExternalDatabaseBackupCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        var authorizationFailure = GetAuthorizationFailure();
+        if (authorizationFailure is not DatabaseBackupFailureReason.None)
+        {
+            return Task.FromResult(CreateDatabaseBackupResult.Failed(authorizationFailure));
+        }
+
+        if (string.IsNullOrWhiteSpace(command.DestinationDirectory) ||
+            !Directory.Exists(command.DestinationDirectory))
+        {
+            return Task.FromResult(CreateDatabaseBackupResult.Failed(
+                DatabaseBackupFailureReason.DestinationDirectoryNotFound));
+        }
+
+        return CreateBackupAsync(
+            Path.GetFullPath(command.DestinationDirectory),
+            createDirectory: false,
+            "Backup",
+            cancellationToken);
+    }
+
+    public async Task<RestoreDatabaseBackupResult> RestoreAsync(
+        RestoreDatabaseBackupCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        var authorizationFailure = GetAuthorizationFailure();
+        if (authorizationFailure is not DatabaseBackupFailureReason.None)
+        {
+            return RestoreDatabaseBackupResult.Failed(authorizationFailure);
+        }
+
+        if (string.IsNullOrWhiteSpace(command.BackupFilePath) ||
+            !File.Exists(command.BackupFilePath))
+        {
+            return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.BackupFileNotFound);
+        }
+
+        string sourcePath;
+        string livePath;
+        try
+        {
+            sourcePath = Path.GetFullPath(command.BackupFilePath);
+            livePath = GetLiveDatabasePath();
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.BackupFileNotFound);
+        }
+
+        if (string.Equals(sourcePath, livePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.InvalidBackup, sourcePath);
+        }
+
+        await maintenanceLock.Semaphore.WaitAsync(cancellationToken);
+        string? stagingPath = null;
+        string? rollbackPath = null;
+        string? preRestorePath = null;
+        var swapCompleted = false;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            stagingPath = CreateUnusedPath(Path.GetDirectoryName(livePath)!, "RestoreStaging");
+            File.Copy(sourcePath, stagingPath, overwrite: false);
+
+            var knownMigrations = dbContext.Database.GetMigrations().ToArray();
+            var stagingValidation = await ValidateDatabaseAsync(
+                stagingPath,
+                knownMigrations,
+                requireCurrentSchema: false,
+                requireActiveResponsible: false,
+                cancellationToken);
+
+            if (!stagingValidation.IsValid)
+            {
+                return RestoreDatabaseBackupResult.Failed(stagingValidation.FailureReason, sourcePath);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (stagingValidation.AppliedMigrations.Count < knownMigrations.Length)
+            {
+                try
+                {
+                    await MigrateStagingAsync(stagingPath, cancellationToken);
+                }
+                catch (Exception exception) when (exception is SqliteException or InvalidOperationException)
+                {
+                    logger?.LogWarning(exception, "The staging backup could not be migrated to the current schema.");
+                    return RestoreDatabaseBackupResult.Failed(
+                        DatabaseBackupFailureReason.IncompatibleBackup,
+                        sourcePath);
+                }
+            }
+
+            await CheckpointAndCloseAsync(stagingPath, cancellationToken);
+            DeleteSidecarsBestEffort(stagingPath);
+
+            var migratedValidation = await ValidateDatabaseAsync(
+                stagingPath,
+                knownMigrations,
+                requireCurrentSchema: true,
+                requireActiveResponsible: true,
+                cancellationToken);
+
+            if (!migratedValidation.IsValid)
+            {
+                return RestoreDatabaseBackupResult.Failed(migratedValidation.FailureReason, sourcePath);
+            }
+
+            await CheckpointAndCloseAsync(stagingPath, cancellationToken);
+            DeleteSidecarsBestEffort(stagingPath);
+            cancellationToken.ThrowIfCancellationRequested();
+            Directory.CreateDirectory(options.LocalBackupDirectory);
+            preRestorePath = CreateUniquePath(options.LocalBackupDirectory, "PreRestore");
+
+            try
+            {
+                BackupDatabase(livePath, preRestorePath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SqliteException)
+            {
+                logger?.LogWarning(exception, "The safety backup required before restore could not be created.");
+                DeleteDatabaseFilesBestEffort(preRestorePath);
+                preRestorePath = null;
+                return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.StorageFailure, sourcePath);
+            }
+
+            var safetyValidation = await ValidateDatabaseAsync(
+                preRestorePath,
+                knownMigrations,
+                requireCurrentSchema: true,
+                requireActiveResponsible: true,
+                cancellationToken);
+
+            if (!safetyValidation.IsValid)
+            {
+                DeleteDatabaseFilesBestEffort(preRestorePath);
+                preRestorePath = null;
+                return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.RestoreFailed, sourcePath);
+            }
+
+            await CheckpointAndCloseAsync(livePath, cancellationToken);
+            await dbContext.Database.CloseConnectionAsync();
+            SqliteConnection.ClearAllPools();
+            DeleteSidecarsBestEffort(livePath);
+
+            // Cancellation is honored until this boundary. The atomic replacement and any
+            // required rollback then run to completion so cancellation cannot strand the DB.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            rollbackPath = CreateUnusedPath(Path.GetDirectoryName(livePath)!, "RestoreRollback");
+            try
+            {
+                File.Replace(stagingPath, livePath, rollbackPath, ignoreMetadataErrors: true);
+                stagingPath = null;
+                swapCompleted = true;
+                restoreTestHook.InvokeAfterAtomicReplace(livePath);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                logger?.LogWarning(exception, "The atomic database replacement failed.");
+                return RestoreDatabaseBackupResult.Failed(
+                    DatabaseBackupFailureReason.RestoreFailed,
+                    sourcePath,
+                    preRestorePath);
+            }
+
+            var postSwapValidation = await ValidateDatabaseAsync(
+                livePath,
+                knownMigrations,
+                requireCurrentSchema: true,
+                requireActiveResponsible: true,
+                CancellationToken.None);
+
+            if (!postSwapValidation.IsValid)
+            {
+                try
+                {
+                    RollbackAtomicReplacement(rollbackPath, livePath);
+                    rollbackPath = null;
+                    swapCompleted = false;
+                }
+                catch (Exception rollbackException)
+                {
+                    throw new CriticalDatabaseRestoreException(
+                        "The restored database failed validation and the atomic rollback also failed.",
+                        rollbackException);
+                }
+
+                return RestoreDatabaseBackupResult.Failed(
+                    DatabaseBackupFailureReason.RestoreFailed,
+                    sourcePath,
+                    preRestorePath);
+            }
+
+            await CheckpointAndCloseAsync(livePath, CancellationToken.None);
+            SqliteConnection.ClearAllPools();
+            DeleteSidecarsBestEffort(livePath);
+            DeleteDatabaseFilesBestEffort(rollbackPath);
+            rollbackPath = null;
+            swapCompleted = false;
+            currentUserSession.Clear();
+
+            return RestoreDatabaseBackupResult.Succeeded(sourcePath, preRestorePath);
+        }
+        catch (CriticalDatabaseRestoreException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SqliteException)
+        {
+            if (swapCompleted)
+            {
+                try
+                {
+                    RollbackAtomicReplacement(rollbackPath!, livePath);
+                    rollbackPath = null;
+                    swapCompleted = false;
+                }
+                catch (Exception rollbackException)
+                {
+                    throw new CriticalDatabaseRestoreException(
+                        "The restore failed after replacement and the atomic rollback also failed.",
+                        rollbackException);
+                }
+            }
+
+            logger?.LogWarning(exception, "The database restore failed before completion.");
+            return RestoreDatabaseBackupResult.Failed(
+                DatabaseBackupFailureReason.RestoreFailed,
+                sourcePath,
+                preRestorePath);
+        }
+        catch (Exception) when (swapCompleted)
+        {
+            try
+            {
+                RollbackAtomicReplacement(rollbackPath!, livePath);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new CriticalDatabaseRestoreException(
+                    "An unexpected post-swap failure occurred and the atomic rollback also failed.",
+                    rollbackException);
+            }
+
+            rollbackPath = null;
+            swapCompleted = false;
+            throw;
+        }
+        finally
+        {
+            DeleteDatabaseFilesBestEffort(stagingPath);
+            if (!swapCompleted)
+            {
+                DeleteDatabaseFilesBestEffort(rollbackPath);
+            }
+
+            maintenanceLock.Semaphore.Release();
+        }
+    }
+
+    private async Task<CreateDatabaseBackupResult> CreateBackupAsync(
+        string destinationDirectory,
+        bool createDirectory,
+        string nameKind,
+        CancellationToken cancellationToken)
+    {
+        var authorizationFailure = GetAuthorizationFailure();
+        if (authorizationFailure is not DatabaseBackupFailureReason.None)
+        {
+            return CreateDatabaseBackupResult.Failed(authorizationFailure);
+        }
+
+        await maintenanceLock.Semaphore.WaitAsync(cancellationToken);
+        string? backupPath = null;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (createDirectory)
+            {
+                Directory.CreateDirectory(destinationDirectory);
+            }
+            else if (!Directory.Exists(destinationDirectory))
+            {
+                return CreateDatabaseBackupResult.Failed(
+                    DatabaseBackupFailureReason.DestinationDirectoryNotFound);
+            }
+
+            var createdAtUtc = timeProvider.GetUtcNow();
+            backupPath = CreateUniquePath(destinationDirectory, nameKind, createdAtUtc);
+            BackupDatabase(GetLiveDatabasePath(), backupPath);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var validation = await ValidateDatabaseAsync(
+                backupPath,
+                dbContext.Database.GetMigrations().ToArray(),
+                requireCurrentSchema: true,
+                requireActiveResponsible: false,
+                cancellationToken);
+
+            if (!validation.IsValid)
+            {
+                DeleteDatabaseFilesBestEffort(backupPath);
+                return CreateDatabaseBackupResult.Failed(validation.FailureReason);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileSize = new FileInfo(backupPath).Length;
+            return CreateDatabaseBackupResult.Succeeded(backupPath, createdAtUtc, fileSize);
+        }
+        catch (OperationCanceledException)
+        {
+            DeleteDatabaseFilesBestEffort(backupPath);
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SqliteException)
+        {
+            logger?.LogWarning(exception, "The database backup could not be created.");
+            DeleteDatabaseFilesBestEffort(backupPath);
+            return CreateDatabaseBackupResult.Failed(DatabaseBackupFailureReason.StorageFailure);
+        }
+        finally
+        {
+            maintenanceLock.Semaphore.Release();
+        }
+    }
+
+    private DatabaseBackupFailureReason GetAuthorizationFailure()
+    {
+        if (!currentUserSession.IsAuthenticated)
+        {
+            return DatabaseBackupFailureReason.NotAuthenticated;
+        }
+
+        return authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.BackupRestore)
+            ? DatabaseBackupFailureReason.None
+            : DatabaseBackupFailureReason.Forbidden;
+    }
+
+    private string GetLiveDatabasePath()
+    {
+        var builder = new SqliteConnectionStringBuilder(dbContext.Database.GetConnectionString());
+        if (string.IsNullOrWhiteSpace(builder.DataSource) || builder.DataSource == ":memory:")
+        {
+            throw new InvalidOperationException("Backup and restore require a file-backed SQLite database.");
+        }
+
+        return Path.GetFullPath(builder.DataSource);
+    }
+
+    private static void BackupDatabase(string sourcePath, string destinationPath)
+    {
+        using var source = new SqliteConnection(BuildConnectionString(sourcePath, SqliteOpenMode.ReadWrite));
+        using var destination = new SqliteConnection(BuildConnectionString(destinationPath, SqliteOpenMode.ReadWriteCreate));
+        source.Open();
+        destination.Open();
+        source.BackupDatabase(destination);
+    }
+
+    private async Task<DatabaseValidation> ValidateDatabaseAsync(
+        string databasePath,
+        IReadOnlyList<string> knownMigrations,
+        bool requireCurrentSchema,
+        bool requireActiveResponsible,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await using var connection = new SqliteConnection(
+                BuildConnectionString(databasePath, SqliteOpenMode.ReadWrite));
+            await connection.OpenAsync(cancellationToken);
+
+            if (!string.Equals(
+                    await ExecuteScalarStringAsync(connection, "PRAGMA integrity_check;", cancellationToken),
+                    "ok",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+            }
+
+            await using (var foreignKeyCheck = connection.CreateCommand())
+            {
+                foreignKeyCheck.CommandText = "PRAGMA foreign_key_check;";
+                await using var reader = await foreignKeyCheck.ExecuteReaderAsync(cancellationToken);
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+                }
+            }
+
+            if (!await SqliteObjectExistsAsync(connection, "table", MigrationHistoryTable, cancellationToken))
+            {
+                return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+            }
+
+            var appliedMigrations = new List<string>();
+            await using (var history = connection.CreateCommand())
+            {
+                history.CommandText = $"SELECT MigrationId FROM \"{MigrationHistoryTable}\" ORDER BY MigrationId;";
+                await using var reader = await history.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    appliedMigrations.Add(reader.GetString(0));
+                }
+            }
+
+            if (appliedMigrations.Count == 0 ||
+                appliedMigrations.Count > knownMigrations.Count ||
+                !appliedMigrations.SequenceEqual(knownMigrations.Take(appliedMigrations.Count), StringComparer.Ordinal))
+            {
+                return DatabaseValidation.Invalid(DatabaseBackupFailureReason.IncompatibleBackup);
+            }
+
+            if (requireCurrentSchema && appliedMigrations.Count != knownMigrations.Count)
+            {
+                return DatabaseValidation.Invalid(DatabaseBackupFailureReason.IncompatibleBackup);
+            }
+
+            var singletonMigrationApplied = appliedMigrations.Any(
+                migration => migration.EndsWith("_003_TreasuryOpeningBalanceSingleton", StringComparison.Ordinal));
+            if (singletonMigrationApplied &&
+                !await SqliteObjectExistsAsync(connection, "index", CurrentSingletonIndex, cancellationToken))
+            {
+                return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+            }
+
+            if (requireActiveResponsible)
+            {
+                await using var responsible = connection.CreateCommand();
+                responsible.CommandText =
+                    "SELECT EXISTS(SELECT 1 FROM Users WHERE Role = $role AND IsActive = 1);";
+                responsible.Parameters.AddWithValue("$role", UserRole.Responsable.ToString());
+                if (Convert.ToInt64(await responsible.ExecuteScalarAsync(cancellationToken)) != 1)
+                {
+                    return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+                }
+            }
+
+            return DatabaseValidation.Valid(appliedMigrations);
+        }
+        catch (SqliteException exception)
+        {
+            logger?.LogWarning(exception, "SQLite validation failed for {DatabasePath}.", databasePath);
+            return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+        }
+    }
+
+    private static async Task MigrateStagingAsync(string stagingPath, CancellationToken cancellationToken)
+    {
+        var options = new DbContextOptionsBuilder<FinancialManagementDbContext>()
+            .UseSqlite(BuildConnectionString(stagingPath, SqliteOpenMode.ReadWrite))
+            .AddInterceptors(SqlitePragmaConnectionInterceptor.Instance)
+            .Options;
+
+        await using var stagingContext = new FinancialManagementDbContext(options);
+        await stagingContext.Database.MigrateAsync(cancellationToken);
+        await stagingContext.Database.CloseConnectionAsync();
+    }
+
+    private static async Task CheckpointAndCloseAsync(string databasePath, CancellationToken cancellationToken)
+    {
+        await using var connection = new SqliteConnection(
+            BuildConnectionString(databasePath, SqliteOpenMode.ReadWrite));
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await connection.CloseAsync();
+    }
+
+    private static void RollbackAtomicReplacement(string rollbackPath, string livePath)
+    {
+        SqliteConnection.ClearAllPools();
+        DeleteSidecarsBestEffort(livePath);
+        File.Replace(rollbackPath, livePath, null, ignoreMetadataErrors: true);
+    }
+
+    private string CreateUniquePath(
+        string directory,
+        string nameKind,
+        DateTimeOffset? timestamp = null)
+    {
+        var createdAtUtc = timestamp ?? timeProvider.GetUtcNow();
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var token = RandomNumberGenerator.GetHexString(8);
+            var fileName = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture,
+                $"FinancialManagement_{nameKind}_{createdAtUtc:yyyyMMdd_HHmmss_fff}_{token}.db");
+            var path = Path.Combine(directory, fileName);
+
+            try
+            {
+                using var reservation = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                return path;
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+            }
+        }
+
+        throw new IOException("A unique database maintenance file name could not be reserved.");
+    }
+
+    private string CreateUnusedPath(string directory, string nameKind)
+    {
+        var reservedPath = CreateUniquePath(directory, nameKind);
+        File.Delete(reservedPath);
+        return reservedPath;
+    }
+
+    private static string BuildConnectionString(string databasePath, SqliteOpenMode mode) =>
+        new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Mode = mode,
+            Pooling = false,
+            ForeignKeys = true,
+            DefaultTimeout = 5
+        }.ToString();
+
+    private static async Task<string?> ExecuteScalarStringAsync(
+        SqliteConnection connection,
+        string commandText,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task<bool> SqliteObjectExistsAsync(
+        SqliteConnection connection,
+        string type,
+        string name,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = $type AND name = $name);";
+        command.Parameters.AddWithValue("$type", type);
+        command.Parameters.AddWithValue("$name", name);
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 1;
+    }
+
+    private static void DeleteSidecarsBestEffort(string databasePath)
+    {
+        DeleteFileBestEffort(databasePath + "-wal");
+        DeleteFileBestEffort(databasePath + "-shm");
+        DeleteFileBestEffort(databasePath + "-journal");
+    }
+
+    private static void DeleteDatabaseFilesBestEffort(string? databasePath)
+    {
+        if (databasePath is null)
+        {
+            return;
+        }
+
+        DeleteFileBestEffort(databasePath);
+        DeleteSidecarsBestEffort(databasePath);
+    }
+
+    private static void DeleteFileBestEffort(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private sealed record DatabaseValidation(
+        bool IsValid,
+        DatabaseBackupFailureReason FailureReason,
+        IReadOnlyList<string> AppliedMigrations)
+    {
+        public static DatabaseValidation Valid(IReadOnlyList<string> appliedMigrations) =>
+            new(true, DatabaseBackupFailureReason.None, appliedMigrations);
+
+        public static DatabaseValidation Invalid(DatabaseBackupFailureReason failureReason) =>
+            new(false, failureReason, Array.Empty<string>());
+    }
+
+    private sealed class CriticalDatabaseRestoreException(string message, Exception innerException)
+        : Exception(message, innerException);
+}

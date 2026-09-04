@@ -1246,6 +1246,9 @@ public sealed class CustomerPaymentServiceTests
 
         public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
             $"DET-{historicalDate:yyyyMMdd}-000000000001";
+
+        public string GenerateTreasuryTransferReference(DateOnly businessDate) =>
+            $"TRF-{businessDate:yyyyMMdd}-000000000001";
     }
 
     private sealed record ConcurrentPaymentAttempt(
