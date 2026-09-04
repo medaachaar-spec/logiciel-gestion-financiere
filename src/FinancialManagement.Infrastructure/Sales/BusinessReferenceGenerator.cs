@@ -18,6 +18,12 @@ internal sealed class BusinessReferenceGenerator : IBusinessReferenceGenerator
     public string GenerateSupplierPaymentReference(DateOnly businessDate) =>
         Generate("DEC", businessDate);
 
+    public string GenerateInitialCustomerReceivableReference(DateOnly historicalDate) =>
+        Generate("CRE", historicalDate);
+
+    public string GenerateInitialSupplierPayableReference(DateOnly historicalDate) =>
+        Generate("DET", historicalDate);
+
     private static string Generate(string prefix, DateOnly businessDate) =>
         $"{prefix}-{businessDate.ToString("yyyyMMdd", CultureInfo.InvariantCulture)}-" +
         RandomNumberGenerator.GetHexString(12);
