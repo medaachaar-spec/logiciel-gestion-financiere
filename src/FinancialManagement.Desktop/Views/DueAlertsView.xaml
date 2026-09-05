@@ -8,8 +8,9 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Focusable" Value="True" />
+            <Setter Property="IsTabStop" Value="True" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding AccessibilityName}" />
         </Style>
         <Style x:Key="DueAlertStatusStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
@@ -36,12 +37,26 @@
                         <ColumnDefinition Width="135" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="{Binding Reference}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Reference}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding Reference}" />
                         <TextBlock Text="{Binding SourceTypeLabel}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
                     </StackPanel>
-                    <TextBlock Grid.Column="1" Text="{Binding PartyName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="8,0" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding PartyName}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding PartyName}"
+                               Margin="8,0" />
                     <TextBlock Grid.Column="2" Text="{Binding DueDate}" VerticalAlignment="Center" Margin="8,0" />
-                    <TextBlock Grid.Column="3" Text="{Binding OutstandingAmount}" VerticalAlignment="Center" TextAlignment="Right" Margin="8,0" />
+                    <TextBlock Grid.Column="3"
+                               Text="{Binding OutstandingAmount}"
+                               VerticalAlignment="Center"
+                               TextAlignment="Right"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding OutstandingAmount}"
+                               Margin="8,0" />
                     <StackPanel Grid.Column="4" Margin="8,0,0,0">
                         <TextBlock Text="{Binding StatusLabel}" Style="{StaticResource DueAlertStatusStyle}" />
                         <TextBlock Text="{Binding DaysLabel}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextWrapping="Wrap" />
@@ -105,13 +120,28 @@
                            Visibility="{Binding HasAlerts, Converter={StaticResource InverseBooleanConverter}}" />
 
                 <StackPanel Visibility="{Binding HasAlerts, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <TextBlock FontWeight="SemiBold" FontSize="15">
-                        <Run Text="Clients — " />
-                        <Run Text="{Binding TotalCustomerAlertCount, Mode=OneWay}" />
-                        <Run Text=" alerte(s), dont " />
-                        <Run Text="{Binding OverdueCustomerCount, Mode=OneWay}" />
-                        <Run Text=" en retard" />
-                    </TextBlock>
+                    <TextBlock Text="{Binding CustomerSummary}"
+                               FontWeight="SemiBold"
+                               FontSize="15" />
+                    <Border Background="{StaticResource BackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="10,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.1*" MinWidth="110" />
+                                <ColumnDefinition Width="1.5*" MinWidth="135" />
+                                <ColumnDefinition Width="105" />
+                                <ColumnDefinition Width="115" />
+                                <ColumnDefinition Width="135" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Référence" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="Tiers" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0" />
+                            <TextBlock Grid.Column="2" Text="Échéance" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0" />
+                            <TextBlock Grid.Column="3" Text="Montant" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextAlignment="Right" Margin="8,0" />
+                            <TextBlock Grid.Column="4" Text="Statut" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0,0,0" />
+                        </Grid>
+                    </Border>
                     <ListBox ItemsSource="{Binding CustomerAlerts}"
                              ItemTemplate="{StaticResource DueAlertItemTemplate}"
                              ItemContainerStyle="{StaticResource DueAlertListItemStyle}"
@@ -122,13 +152,28 @@
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.CanContentScroll="True" />
 
-                    <TextBlock FontWeight="SemiBold" FontSize="15">
-                        <Run Text="Fournisseurs — " />
-                        <Run Text="{Binding TotalSupplierAlertCount, Mode=OneWay}" />
-                        <Run Text=" alerte(s), dont " />
-                        <Run Text="{Binding OverdueSupplierCount, Mode=OneWay}" />
-                        <Run Text=" en retard" />
-                    </TextBlock>
+                    <TextBlock Text="{Binding SupplierSummary}"
+                               FontWeight="SemiBold"
+                               FontSize="15" />
+                    <Border Background="{StaticResource BackgroundBrush}"
+                            BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="10,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.1*" MinWidth="110" />
+                                <ColumnDefinition Width="1.5*" MinWidth="135" />
+                                <ColumnDefinition Width="105" />
+                                <ColumnDefinition Width="115" />
+                                <ColumnDefinition Width="135" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Référence" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Grid.Column="1" Text="Tiers" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0" />
+                            <TextBlock Grid.Column="2" Text="Échéance" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0" />
+                            <TextBlock Grid.Column="3" Text="Montant" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextAlignment="Right" Margin="8,0" />
+                            <TextBlock Grid.Column="4" Text="Statut" FontWeight="SemiBold" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="8,0,0,0" />
+                        </Grid>
+                    </Border>
                     <ListBox ItemsSource="{Binding SupplierAlerts}"
                              ItemTemplate="{StaticResource DueAlertItemTemplate}"
                              ItemContainerStyle="{StaticResource DueAlertListItemStyle}"

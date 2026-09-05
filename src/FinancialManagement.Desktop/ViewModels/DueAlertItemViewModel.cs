@@ -17,6 +17,12 @@ public sealed class DueAlertItemViewModel
         StatusLabel = FormatStatus(alert.Status);
         DaysLabel = FormatDaysUntilDue(alert.DaysUntilDue);
         SourceTypeLabel = FormatSourceType(alert.SourceType);
+        var timingDescription = Status == FinancialDueAlertStatus.DueToday
+            ? StatusLabel
+            : $"{StatusLabel}, {DaysLabel}";
+        AccessibilityName =
+            $"{Reference}, {PartyName}, échéance {DueDate}, montant {OutstandingAmount}, "
+            + $"statut {timingDescription}";
     }
 
     public string Reference { get; }
@@ -34,6 +40,8 @@ public sealed class DueAlertItemViewModel
     public string DaysLabel { get; }
 
     public string SourceTypeLabel { get; }
+
+    public string AccessibilityName { get; }
 
     private static string FormatStatus(FinancialDueAlertStatus status) => status switch
     {
