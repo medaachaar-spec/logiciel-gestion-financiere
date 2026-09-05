@@ -16,6 +16,7 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly IAuthenticationService _authenticationService;
     private readonly RelayCommand _logoutRelayCommand;
     private readonly Lazy<DashboardViewModel> _dashboard;
+    private readonly Lazy<TreasuryViewModel> _treasury;
     private readonly HashSet<NavigationItemViewModel> _authorizedItems = [];
     private bool _isInitialized;
     private bool _logoutRequested;
@@ -24,17 +25,20 @@ public sealed class ShellViewModel : ViewModelBase
         ICurrentUserSession currentUserSession,
         IAuthorizationService authorizationService,
         IAuthenticationService authenticationService,
-        Lazy<DashboardViewModel> dashboardViewModel)
+        Lazy<DashboardViewModel> dashboardViewModel,
+        Lazy<TreasuryViewModel> treasuryViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
         ArgumentNullException.ThrowIfNull(authorizationService);
         ArgumentNullException.ThrowIfNull(authenticationService);
         ArgumentNullException.ThrowIfNull(dashboardViewModel);
+        ArgumentNullException.ThrowIfNull(treasuryViewModel);
 
         _currentUserSession = currentUserSession;
         _authorizationService = authorizationService;
         _authenticationService = authenticationService;
         _dashboard = dashboardViewModel;
+        _treasury = treasuryViewModel;
 
         NavigateCommand = new RelayCommand(
             parameter =>
@@ -200,7 +204,12 @@ public sealed class ShellViewModel : ViewModelBase
             navigationItem.IsSelected = ReferenceEquals(navigationItem, item);
         }
 
-        CurrentPage = item.PageKey == "dashboard" ? _dashboard.Value : item.Page;
+        CurrentPage = item.PageKey switch
+        {
+            "dashboard" => _dashboard.Value,
+            "treasury" => _treasury.Value,
+            _ => item.Page
+        };
         CurrentPageTitle = item.Title;
     }
 
@@ -236,14 +245,25 @@ public sealed class ShellViewModel : ViewModelBase
             _dashboard.Value.Stop();
         }
 
+        if (_treasury.IsValueCreated)
+        {
+            _treasury.Value.Stop();
+        }
+
         SetAllItemsHidden();
         CurrentPage = null;
     }
 
-    public Task StopAsync()
+    public async Task StopAsync()
     {
         Stop();
-        return _dashboard.IsValueCreated ? _dashboard.Value.StopAsync() : Task.CompletedTask;
+        var dashboardStop = _dashboard.IsValueCreated
+            ? _dashboard.Value.StopAsync()
+            : Task.CompletedTask;
+        var treasuryStop = _treasury.IsValueCreated
+            ? _treasury.Value.StopAsync()
+            : Task.CompletedTask;
+        await Task.WhenAll(dashboardStop, treasuryStop);
     }
 
     private void SetNoAuthorizedModulePage()
