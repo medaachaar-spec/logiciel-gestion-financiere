@@ -9,27 +9,32 @@ namespace FinancialManagement.Desktop.ViewModels;
 
 public sealed class ShellViewModel : ViewModelBase
 {
-    private PlaceholderPageViewModel? _currentPage;
+    private ViewModelBase? _currentPage;
     private string _currentPageTitle = string.Empty;
     private readonly ICurrentUserSession _currentUserSession;
     private readonly IAuthorizationService _authorizationService;
     private readonly IAuthenticationService _authenticationService;
     private readonly RelayCommand _logoutRelayCommand;
+    private readonly Lazy<DashboardViewModel> _dashboard;
+    private readonly HashSet<NavigationItemViewModel> _authorizedItems = [];
     private bool _isInitialized;
     private bool _logoutRequested;
 
     public ShellViewModel(
         ICurrentUserSession currentUserSession,
         IAuthorizationService authorizationService,
-        IAuthenticationService authenticationService)
+        IAuthenticationService authenticationService,
+        Lazy<DashboardViewModel> dashboardViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
         ArgumentNullException.ThrowIfNull(authorizationService);
         ArgumentNullException.ThrowIfNull(authenticationService);
+        ArgumentNullException.ThrowIfNull(dashboardViewModel);
 
         _currentUserSession = currentUserSession;
         _authorizationService = authorizationService;
         _authenticationService = authenticationService;
+        _dashboard = dashboardViewModel;
 
         NavigateCommand = new RelayCommand(
             parameter =>
@@ -51,7 +56,7 @@ public sealed class ShellViewModel : ViewModelBase
             _ => !_logoutRequested);
         LogoutCommand = _logoutRelayCommand;
 
-        AddNavigationItem("Tableau de bord", "\uE80F", "dashboard", "La vue de synthèse sera intégrée dans une prochaine étape.", requiredCapability: ResponsibleCapability.GlobalDashboard);
+        AddNavigationItem("Tableau de bord", "\uE80F", "dashboard", string.Empty, requiredCapability: ResponsibleCapability.GlobalDashboard);
         AddNavigationItem("Ventes", "\uE719", "sales", "Le contenu métier des ventes sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Sales);
         AddNavigationItem("Achats", "\uE7BF", "purchases", "Le contenu métier des achats sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Purchases);
         AddNavigationItem("Dépenses", "\uE7C1", "expenses", "Le contenu métier des dépenses sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Expenses);
@@ -73,7 +78,7 @@ public sealed class ShellViewModel : ViewModelBase
 
     public string AuthenticatedUsername => _currentUserSession.Username ?? string.Empty;
 
-    public PlaceholderPageViewModel? CurrentPage
+    public ViewModelBase? CurrentPage
     {
         get => _currentPage;
         private set => SetProperty(ref _currentPage, value);
@@ -111,6 +116,10 @@ public sealed class ShellViewModel : ViewModelBase
                         && _authorizationService.CanAccessResponsibleCapability(capability);
 
                 item.IsVisible = isAuthorized;
+                if (isAuthorized)
+                {
+                    _authorizedItems.Add(item);
+                }
             }
         }
         catch (Exception exception)
@@ -142,13 +151,14 @@ public sealed class ShellViewModel : ViewModelBase
 
     public bool NavigateTo(string pageKey)
     {
-        if (!_isInitialized || string.IsNullOrWhiteSpace(pageKey))
+        if (!_isInitialized || _logoutRequested || !_currentUserSession.IsAuthenticated
+            || string.IsNullOrWhiteSpace(pageKey))
         {
             return false;
         }
 
         var item = NavigationItems.FirstOrDefault(navigationItem => navigationItem.PageKey == pageKey);
-        if (item is null || !item.IsVisible)
+        if (item is null || !item.IsVisible || !_authorizedItems.Contains(item))
         {
             return false;
         }
@@ -162,10 +172,11 @@ public sealed class ShellViewModel : ViewModelBase
         string iconGlyph,
         string pageKey,
         string description,
+        ViewModelBase? page = null,
         PermissionModule? requiredModule = null,
         ResponsibleCapability? requiredCapability = null)
     {
-        var page = new PlaceholderPageViewModel(title, description);
+        page ??= new PlaceholderPageViewModel(title, description);
         NavigationItems.Add(new NavigationItemViewModel(
             title,
             iconGlyph,
@@ -178,7 +189,8 @@ public sealed class ShellViewModel : ViewModelBase
 
     private void NavigateTo(NavigationItemViewModel item)
     {
-        if (!NavigationItems.Contains(item) || !item.IsVisible)
+        if (_logoutRequested || !_currentUserSession.IsAuthenticated
+            || !NavigationItems.Contains(item) || !item.IsVisible || !_authorizedItems.Contains(item))
         {
             return;
         }
@@ -188,7 +200,7 @@ public sealed class ShellViewModel : ViewModelBase
             navigationItem.IsSelected = ReferenceEquals(navigationItem, item);
         }
 
-        CurrentPage = item.Page;
+        CurrentPage = item.PageKey == "dashboard" ? _dashboard.Value : item.Page;
         CurrentPageTitle = item.Title;
     }
 
@@ -200,6 +212,7 @@ public sealed class ShellViewModel : ViewModelBase
         }
 
         _logoutRequested = true;
+        Stop();
         _authenticationService.Logout();
         _logoutRelayCommand.RaiseCanExecuteChanged();
         LogoutRequested?.Invoke(this, EventArgs.Empty);
@@ -207,11 +220,30 @@ public sealed class ShellViewModel : ViewModelBase
 
     private void SetAllItemsHidden()
     {
+        _authorizedItems.Clear();
         foreach (var item in NavigationItems)
         {
             item.IsVisible = false;
             item.IsSelected = false;
         }
+    }
+
+    public void Stop()
+    {
+        _logoutRequested = true;
+        if (_dashboard.IsValueCreated)
+        {
+            _dashboard.Value.Stop();
+        }
+
+        SetAllItemsHidden();
+        CurrentPage = null;
+    }
+
+    public Task StopAsync()
+    {
+        Stop();
+        return _dashboard.IsValueCreated ? _dashboard.Value.StopAsync() : Task.CompletedTask;
     }
 
     private void SetNoAuthorizedModulePage()

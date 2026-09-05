@@ -1,0 +1,54 @@
+using System.Windows.Input;
+using System.Diagnostics;
+
+namespace FinancialManagement.Desktop.ViewModels;
+
+public sealed class AsyncRelayCommand : ICommand
+{
+    private readonly Func<object?, Task> _execute;
+    private readonly Predicate<object?>? _canExecute;
+    private bool _isExecuting;
+
+    public AsyncRelayCommand(
+        Func<object?, Task> execute,
+        Predicate<object?>? canExecute = null)
+    {
+        ArgumentNullException.ThrowIfNull(execute);
+        _execute = execute;
+        _canExecute = canExecute;
+    }
+
+    public event EventHandler? CanExecuteChanged;
+
+    public bool CanExecute(object? parameter) =>
+        !_isExecuting && (_canExecute?.Invoke(parameter) ?? true);
+
+    public void Execute(object? parameter) => _ = ExecuteAsync(parameter);
+
+    public async Task ExecuteAsync(object? parameter)
+    {
+        if (!CanExecute(parameter))
+        {
+            return;
+        }
+
+        _isExecuting = true;
+        RaiseCanExecuteChanged();
+        try
+        {
+            await _execute(parameter);
+        }
+        catch (Exception exception)
+        {
+            // ViewModels own user-facing errors; no exception may escape the ICommand adapter.
+            Trace.TraceError("Async command failed: {0}", exception);
+        }
+        finally
+        {
+            _isExecuting = false;
+            RaiseCanExecuteChanged();
+        }
+    }
+
+    public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+}
