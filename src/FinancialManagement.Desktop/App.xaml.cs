@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Desktop.Configuration;
+using FinancialManagement.Desktop.Services;
 using FinancialManagement.Desktop.ViewModels;
 using FinancialManagement.Infrastructure;
 using Microsoft.Data.Sqlite;
@@ -96,6 +97,8 @@ public partial class App : System.Windows.Application
         services.AddInfrastructure(connectionString);
         services.AddTransient<LoginViewModel>();
         services.AddTransient<LoginWindow>();
+        services.AddScoped<DashboardOperationCoordinator>();
+        services.AddTransient<DueAlertsViewModel>();
         services.AddTransient<DashboardViewModel>();
         services.AddTransient(provider => new Lazy<DashboardViewModel>(
             () => provider.GetRequiredService<DashboardViewModel>()));
