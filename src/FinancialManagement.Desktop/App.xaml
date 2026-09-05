@@ -18,6 +18,10 @@
                 <views:DashboardView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type vm:TreasuryViewModel}">
+                <views:TreasuryView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type vm:PlaceholderPageViewModel}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <views:PlaceholderPageView />
