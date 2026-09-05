@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows.Input;
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
+using FinancialManagement.Desktop.Services;
 using FinancialManagement.Domain.Enums;
 
 namespace FinancialManagement.Desktop.ViewModels;
@@ -14,10 +15,14 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly ICurrentUserSession _currentUserSession;
     private readonly IAuthorizationService _authorizationService;
     private readonly IAuthenticationService _authenticationService;
+    private readonly DashboardOperationCoordinator _operationCoordinator;
+    private readonly AsyncRelayCommand _navigateCommand;
     private readonly RelayCommand _logoutRelayCommand;
+    private readonly ObservableCollection<NavigationItemViewModel> _navigationItems = [];
     private readonly Lazy<DashboardViewModel> _dashboard;
     private readonly Lazy<TreasuryViewModel> _treasury;
-    private readonly HashSet<NavigationItemViewModel> _authorizedItems = [];
+    private readonly CancellationTokenSource _navigationCancellation = new();
+    private long _navigationRequestVersion;
     private bool _isInitialized;
     private bool _logoutRequested;
 
@@ -25,42 +30,54 @@ public sealed class ShellViewModel : ViewModelBase
         ICurrentUserSession currentUserSession,
         IAuthorizationService authorizationService,
         IAuthenticationService authenticationService,
+        DashboardOperationCoordinator operationCoordinator,
         Lazy<DashboardViewModel> dashboardViewModel,
         Lazy<TreasuryViewModel> treasuryViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
         ArgumentNullException.ThrowIfNull(authorizationService);
         ArgumentNullException.ThrowIfNull(authenticationService);
+        ArgumentNullException.ThrowIfNull(operationCoordinator);
         ArgumentNullException.ThrowIfNull(dashboardViewModel);
         ArgumentNullException.ThrowIfNull(treasuryViewModel);
 
         _currentUserSession = currentUserSession;
         _authorizationService = authorizationService;
         _authenticationService = authenticationService;
+        _operationCoordinator = operationCoordinator;
         _dashboard = dashboardViewModel;
         _treasury = treasuryViewModel;
+        NavigationItems = new ReadOnlyObservableCollection<NavigationItemViewModel>(
+            _navigationItems);
 
-        NavigateCommand = new RelayCommand(
-            parameter =>
+        _navigateCommand = new AsyncRelayCommand(
+            async parameter =>
             {
                 if (parameter is NavigationItemViewModel item
-                    && NavigationItems.Contains(item)
-                    && item.IsVisible)
+                    && NavigationItems.Contains(item))
                 {
-                    NavigateTo(item.PageKey);
+                    await NavigateToAsync(item.PageKey);
                 }
             },
             parameter => parameter is NavigationItemViewModel item
                 && NavigationItems.Contains(item)
-                && item.IsVisible
-                && _isInitialized);
+                && _isInitialized
+                && !_logoutRequested
+                && _currentUserSession.IsAuthenticated);
+        NavigateCommand = _navigateCommand;
 
         _logoutRelayCommand = new RelayCommand(
             _ => RequestLogout(),
             _ => !_logoutRequested);
         LogoutCommand = _logoutRelayCommand;
 
-        AddNavigationItem("Tableau de bord", "\uE80F", "dashboard", string.Empty, requiredCapability: ResponsibleCapability.GlobalDashboard);
+        AddNavigationItem(
+            "Tableau de bord",
+            "\uE80F",
+            "dashboard",
+            string.Empty,
+            requiredCapability: ResponsibleCapability.GlobalDashboard,
+            pageFactory: () => _dashboard.Value);
         AddNavigationItem("Ventes", "\uE719", "sales", "Le contenu métier des ventes sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Sales);
         AddNavigationItem("Achats", "\uE7BF", "purchases", "Le contenu métier des achats sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Purchases);
         AddNavigationItem("Dépenses", "\uE7C1", "expenses", "Le contenu métier des dépenses sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Expenses);
@@ -68,11 +85,17 @@ public sealed class ShellViewModel : ViewModelBase
         AddNavigationItem("Fournisseurs", "\uE716", "suppliers", "Le contenu métier des fournisseurs sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Suppliers);
         AddNavigationItem("Encaissements clients", "\uE8C7", "customer-payments", "Le contenu métier des encaissements clients sera intégré dans une prochaine étape.", requiredModule: PermissionModule.CustomerPayments);
         AddNavigationItem("Paiements fournisseurs", "\uE8C7", "supplier-payments", "Le contenu métier des paiements fournisseurs sera intégré dans une prochaine étape.", requiredModule: PermissionModule.SupplierPayments);
-        AddNavigationItem("Caisse & Banque", "\uE8A1", "treasury", "Le contenu métier de la caisse et de la banque sera intégré dans une prochaine étape.", requiredCapability: ResponsibleCapability.Treasury);
+        AddNavigationItem(
+            "Caisse & Banque",
+            "\uE8A1",
+            "treasury",
+            "Le contenu métier de la caisse et de la banque sera intégré dans une prochaine étape.",
+            requiredCapability: ResponsibleCapability.Treasury,
+            pageFactory: () => _treasury.Value);
         AddNavigationItem("Administration", "\uE713", "administration", "Le contenu métier de l'administration sera intégré dans une prochaine étape.", requiredCapability: ResponsibleCapability.Administration);
     }
 
-    public ObservableCollection<NavigationItemViewModel> NavigationItems { get; } = [];
+    public ReadOnlyObservableCollection<NavigationItemViewModel> NavigationItems { get; }
 
     public ICommand NavigateCommand { get; }
 
@@ -103,71 +126,111 @@ public sealed class ShellViewModel : ViewModelBase
 
         SetAllItemsHidden();
 
-        if (!_currentUserSession.IsAuthenticated)
+        if (!TryCaptureAuthenticatedSession(out var sessionIdentity))
         {
             SetNoAuthorizedModulePage();
             _isInitialized = true;
             return false;
         }
 
-        try
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _navigationCancellation.Token);
+
+        foreach (var item in NavigationItems)
         {
-            foreach (var item in NavigationItems)
+            var isAuthorized = await CanNavigateToRouteAsync(
+                item,
+                linkedCancellation.Token);
+
+            if (linkedCancellation.IsCancellationRequested
+                || !IsSameAuthenticatedSession(sessionIdentity))
             {
-                var isAuthorized = item.RequiredModule is PermissionModule module
-                    ? await _authorizationService.CanAsync(module, PermissionAction.View, cancellationToken)
-                    : item.RequiredCapability is ResponsibleCapability capability
-                        && _authorizationService.CanAccessResponsibleCapability(capability);
-
-                item.IsVisible = isAuthorized;
-                if (isAuthorized)
-                {
-                    _authorizedItems.Add(item);
-                }
+                SetAllItemsHidden();
+                SetNoAuthorizedModulePage();
+                _isInitialized = true;
+                _navigateCommand.RaiseCanExecuteChanged();
+                return false;
             }
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceError("Authorization loading failed: {0}", exception);
-            SetAllItemsHidden();
-            CurrentPage = new PlaceholderPageViewModel(
-                "Autorisations indisponibles",
-                "Les autorisations ne sont pas disponibles actuellement.");
-            CurrentPageTitle = "Autorisations indisponibles";
-            _isInitialized = true;
-            return true;
-        }
 
-        var firstVisibleItem = NavigationItems.FirstOrDefault(item => item.IsVisible);
-        if (firstVisibleItem is null)
-        {
-            SetNoAuthorizedModulePage();
-        }
-        else
-        {
-            NavigateTo(firstVisibleItem);
+            item.SetVisibility(isAuthorized);
         }
 
         _isInitialized = true;
+        _navigateCommand.RaiseCanExecuteChanged();
+
+        foreach (var item in NavigationItems.Where(item => item.IsVisible))
+        {
+            if (await NavigateToAsync(item.PageKey, linkedCancellation.Token))
+            {
+                _logoutRelayCommand.RaiseCanExecuteChanged();
+                return true;
+            }
+        }
+
+        SetNoAuthorizedModulePage();
         _logoutRelayCommand.RaiseCanExecuteChanged();
         return true;
     }
 
-    public bool NavigateTo(string pageKey)
+    public async Task<bool> NavigateToAsync(
+        string? pageKey,
+        CancellationToken cancellationToken = default)
     {
-        if (!_isInitialized || _logoutRequested || !_currentUserSession.IsAuthenticated
-            || string.IsNullOrWhiteSpace(pageKey))
+        if (!_isInitialized || _logoutRequested || string.IsNullOrWhiteSpace(pageKey))
         {
             return false;
         }
 
-        var item = NavigationItems.FirstOrDefault(navigationItem => navigationItem.PageKey == pageKey);
-        if (item is null || !item.IsVisible || !_authorizedItems.Contains(item))
+        var item = NavigationItems.FirstOrDefault(
+            navigationItem => string.Equals(
+                navigationItem.PageKey,
+                pageKey,
+                StringComparison.Ordinal));
+        if (item is null || !TryCaptureAuthenticatedSession(out var sessionIdentity))
         {
             return false;
         }
 
-        NavigateTo(item);
+        var requestVersion = Interlocked.Increment(ref _navigationRequestVersion);
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _navigationCancellation.Token);
+
+        var isAuthorized = await CanNavigateToRouteAsync(item, linkedCancellation.Token);
+        if (!isAuthorized
+            || linkedCancellation.IsCancellationRequested
+            || requestVersion != Volatile.Read(ref _navigationRequestVersion)
+            || !IsSameAuthenticatedSession(sessionIdentity))
+        {
+            return false;
+        }
+
+        ViewModelBase page;
+        try
+        {
+            page = item.ResolvePage();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Navigation page resolution failed for route {0}: {1}", pageKey, exception);
+            return false;
+        }
+
+        if (linkedCancellation.IsCancellationRequested
+            || requestVersion != Volatile.Read(ref _navigationRequestVersion)
+            || !IsSameAuthenticatedSession(sessionIdentity))
+        {
+            return false;
+        }
+
+        foreach (var navigationItem in NavigationItems)
+        {
+            navigationItem.SetSelected(ReferenceEquals(navigationItem, item));
+        }
+
+        CurrentPage = page;
+        CurrentPageTitle = item.Title;
         return true;
     }
 
@@ -176,41 +239,60 @@ public sealed class ShellViewModel : ViewModelBase
         string iconGlyph,
         string pageKey,
         string description,
-        ViewModelBase? page = null,
         PermissionModule? requiredModule = null,
-        ResponsibleCapability? requiredCapability = null)
+        ResponsibleCapability? requiredCapability = null,
+        Func<ViewModelBase>? pageFactory = null)
     {
-        page ??= new PlaceholderPageViewModel(title, description);
-        NavigationItems.Add(new NavigationItemViewModel(
+        pageFactory ??= () => new PlaceholderPageViewModel(title, description);
+        _navigationItems.Add(new NavigationItemViewModel(
             title,
             iconGlyph,
             pageKey,
-            page,
+            pageFactory,
             NavigateCommand,
             requiredModule,
             requiredCapability));
     }
 
-    private void NavigateTo(NavigationItemViewModel item)
+    private async Task<bool> CanNavigateToRouteAsync(
+        NavigationItemViewModel item,
+        CancellationToken cancellationToken)
     {
-        if (_logoutRequested || !_currentUserSession.IsAuthenticated
-            || !NavigationItems.Contains(item) || !item.IsVisible || !_authorizedItems.Contains(item))
+        if (_logoutRequested
+            || !NavigationItems.Contains(item)
+            || !TryCaptureAuthenticatedSession(out _))
         {
-            return;
+            return false;
         }
 
-        foreach (var navigationItem in NavigationItems)
+        try
         {
-            navigationItem.IsSelected = ReferenceEquals(navigationItem, item);
-        }
+            if (item.RequiredModule is PermissionModule module
+                && item.RequiredAction is PermissionAction action
+                && item.RequiredCapability is null)
+            {
+                return await _operationCoordinator.RunAsync(
+                    token => _authorizationService.CanAsync(module, action, token),
+                    cancellationToken);
+            }
 
-        CurrentPage = item.PageKey switch
+            return item.RequiredModule is null
+                && item.RequiredAction is null
+                && item.RequiredCapability is ResponsibleCapability capability
+                && _authorizationService.CanAccessResponsibleCapability(capability);
+        }
+        catch (OperationCanceledException)
         {
-            "dashboard" => _dashboard.Value,
-            "treasury" => _treasury.Value,
-            _ => item.Page
-        };
-        CurrentPageTitle = item.Title;
+            return false;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "Navigation authorization failed for route {0}: {1}",
+                item.PageKey,
+                exception);
+            return false;
+        }
     }
 
     private void RequestLogout()
@@ -221,6 +303,8 @@ public sealed class ShellViewModel : ViewModelBase
         }
 
         _logoutRequested = true;
+        Interlocked.Increment(ref _navigationRequestVersion);
+        _navigationCancellation.Cancel();
         Stop();
         _authenticationService.Logout();
         _logoutRelayCommand.RaiseCanExecuteChanged();
@@ -229,17 +313,19 @@ public sealed class ShellViewModel : ViewModelBase
 
     private void SetAllItemsHidden()
     {
-        _authorizedItems.Clear();
         foreach (var item in NavigationItems)
         {
-            item.IsVisible = false;
-            item.IsSelected = false;
+            item.SetVisibility(false);
+            item.SetSelected(false);
         }
     }
 
     public void Stop()
     {
         _logoutRequested = true;
+        Interlocked.Increment(ref _navigationRequestVersion);
+        _navigationCancellation.Cancel();
+        _navigateCommand.RaiseCanExecuteChanged();
         if (_dashboard.IsValueCreated)
         {
             _dashboard.Value.Stop();
@@ -273,4 +359,29 @@ public sealed class ShellViewModel : ViewModelBase
             "Aucun module n'est actuellement autorisé pour ce compte.");
         CurrentPageTitle = "Aucun module autorisé";
     }
+
+    private bool TryCaptureAuthenticatedSession(out SessionIdentity identity)
+    {
+        if (_currentUserSession.IsAuthenticated
+            && _currentUserSession.UserId is long userId
+            && _currentUserSession.Role is UserRole role)
+        {
+            identity = new SessionIdentity(userId, _currentUserSession.Username, role);
+            return true;
+        }
+
+        identity = default;
+        return false;
+    }
+
+    private bool IsSameAuthenticatedSession(SessionIdentity identity) =>
+        _currentUserSession.IsAuthenticated
+        && _currentUserSession.UserId == identity.UserId
+        && string.Equals(_currentUserSession.Username, identity.Username, StringComparison.Ordinal)
+        && _currentUserSession.Role == identity.Role;
+
+    private readonly record struct SessionIdentity(
+        long UserId,
+        string? Username,
+        UserRole Role);
 }

@@ -50,6 +50,7 @@
                             <DataTemplate>
                                 <Button AutomationProperties.Name="{Binding Title}"
                                         Command="{Binding Command}"
+                                        CommandParameter="{Binding}"
                                         Style="{StaticResource NavigationButtonStyle}"
                                         ToolTip="{Binding Title}">
                                     <StackPanel Orientation="Horizontal">
