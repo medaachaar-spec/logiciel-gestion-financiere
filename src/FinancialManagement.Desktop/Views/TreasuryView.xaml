@@ -50,7 +50,7 @@
                 <ProgressBar Height="4" IsIndeterminate="True" />
             </StackPanel>
 
-            <Border Background="{StaticResource PrimarySoftBrush}"
+            <Border Background="{StaticResource SuccessSoftBrush}"
                     CornerRadius="8"
                     Padding="12"
                     Margin="0,0,0,16"
@@ -77,7 +77,10 @@
                     <Border Style="{StaticResource TreasuryCardStyle}">
                         <StackPanel>
                             <TextBlock Text="Caisse" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBlock Text="{Binding CashBalance}" Margin="0,12,0,0">
+                            <TextBlock Text="{Binding CashBalance}"
+                                       Margin="0,12,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding CashBalance}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource TreasuryValueStyle}">
                                         <Style.Triggers>
@@ -93,7 +96,10 @@
                     <Border Style="{StaticResource TreasuryCardStyle}">
                         <StackPanel>
                             <TextBlock Text="Banque" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBlock Text="{Binding BankBalance}" Margin="0,12,0,0">
+                            <TextBlock Text="{Binding BankBalance}"
+                                       Margin="0,12,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding BankBalance}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource TreasuryValueStyle}">
                                         <Style.Triggers>
@@ -109,7 +115,10 @@
                     <Border Style="{StaticResource TreasuryCardStyle}" Margin="0">
                         <StackPanel>
                             <TextBlock Text="Trésorerie totale" Style="{StaticResource FieldLabelTextStyle}" />
-                            <TextBlock Text="{Binding TotalTreasury}" Margin="0,12,0,0">
+                            <TextBlock Text="{Binding TotalTreasury}"
+                                       Margin="0,12,0,0"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding TotalTreasury}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource TreasuryValueStyle}">
                                         <Style.Triggers>
@@ -160,29 +169,46 @@
                         <TextBlock Text="Nouveau transfert" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16" />
                         <WrapPanel>
                             <StackPanel Width="190" Margin="0,0,16,14">
-                                <TextBlock Text="Compte source" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                                <ComboBox Height="36"
+                                <Label Content="Compte source"
+                                       Target="{Binding ElementName=TransferSourceInput}"
+                                       Style="{StaticResource FieldLabelStyle}" />
+                                <ComboBox x:Name="TransferSourceInput"
+                                          TabIndex="0"
+                                          Style="{StaticResource InputComboBoxStyle}"
                                           ItemsSource="{Binding AccountOptions}"
                                           DisplayMemberPath="DisplayName"
                                           SelectedItem="{Binding SelectedFromAccount, Mode=TwoWay}" />
                             </StackPanel>
                             <StackPanel Width="190" Margin="0,0,16,14">
-                                <TextBlock Text="Compte destination" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                                <ComboBox Height="36"
+                                <Label Content="Compte destination"
+                                       Target="{Binding ElementName=TransferDestinationInput}"
+                                       Style="{StaticResource FieldLabelStyle}" />
+                                <ComboBox x:Name="TransferDestinationInput"
+                                          TabIndex="1"
+                                          Style="{StaticResource InputComboBoxStyle}"
                                           ItemsSource="{Binding AccountOptions}"
                                           DisplayMemberPath="DisplayName"
                                           SelectedItem="{Binding SelectedToAccount, Mode=TwoWay}" />
                             </StackPanel>
                             <StackPanel Width="190" Margin="0,0,16,14">
-                                <TextBlock Text="Montant" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                                <TextBox Height="36"
-                                         Text="{Binding TransferAmount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                <Label Content="Montant"
+                                       Target="{Binding ElementName=TransferAmountInput}"
+                                       Style="{StaticResource FieldLabelStyle}" />
+                                <TextBox x:Name="TransferAmountInput"
+                                         TabIndex="2"
+                                         Height="36"
+                                         AutomationProperties.Name="Montant du transfert"
+                                          Text="{Binding TransferAmount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                          Style="{StaticResource InputTextBoxStyle}" />
                             </StackPanel>
                         </WrapPanel>
                         <StackPanel Margin="0,0,0,16">
-                            <TextBlock Text="Observation (facultative)" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                            <TextBox Height="64"
+                            <Label Content="Observation (facultative)"
+                                   Target="{Binding ElementName=TransferObservationInput}"
+                                   Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox x:Name="TransferObservationInput"
+                                     TabIndex="3"
+                                     Height="64"
                                      AcceptsReturn="True"
                                      TextWrapping="Wrap"
                                      VerticalContentAlignment="Top"
@@ -192,9 +218,11 @@
                         </StackPanel>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button Width="96" Height="36" Content="Annuler"
+                                    TabIndex="5"
                                     Command="{Binding CancelTransferFormCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0" />
                             <Button Width="150" Height="36" Content="Enregistrer"
+                                    TabIndex="4"
                                     Command="{Binding CreateTransferCommand}"
                                     Style="{StaticResource PrimaryButtonStyle}" />
                         </StackPanel>
@@ -229,29 +257,45 @@
                         <StackPanel>
                             <WrapPanel>
                                 <StackPanel Width="190" Margin="0,0,16,14">
-                                    <TextBlock Text="Date d'ouverture" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                                    <DatePicker Height="36"
+                                    <Label Content="Date d'ouverture"
+                                           Target="{Binding ElementName=OpeningDateInput}"
+                                           Style="{StaticResource FieldLabelStyle}" />
+                                    <DatePicker x:Name="OpeningDateInput"
+                                                TabIndex="0"
+                                                Style="{StaticResource InputDatePickerStyle}"
                                                 SelectedDate="{Binding OpeningDate, Mode=TwoWay}"
                                                 SelectedDateFormat="Short" />
                                 </StackPanel>
                                 <StackPanel Width="190" Margin="0,0,16,14">
-                                    <TextBlock Text="Solde initial Caisse" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                                    <TextBox Height="36"
+                                    <Label Content="Solde initial Caisse"
+                                           Target="{Binding ElementName=OpeningCashInput}"
+                                           Style="{StaticResource FieldLabelStyle}" />
+                                    <TextBox x:Name="OpeningCashInput"
+                                             TabIndex="1"
+                                             Height="36"
+                                             AutomationProperties.Name="Solde initial Caisse"
                                              Text="{Binding OpeningCashAmount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource InputTextBoxStyle}" />
                                 </StackPanel>
                                 <StackPanel Width="190" Margin="0,0,16,14">
-                                    <TextBlock Text="Solde initial Banque" Style="{StaticResource FieldLabelTextStyle}" Margin="0,0,0,6" />
-                                    <TextBox Height="36"
+                                    <Label Content="Solde initial Banque"
+                                           Target="{Binding ElementName=OpeningBankInput}"
+                                           Style="{StaticResource FieldLabelStyle}" />
+                                    <TextBox x:Name="OpeningBankInput"
+                                             TabIndex="2"
+                                             Height="36"
+                                             AutomationProperties.Name="Solde initial Banque"
                                              Text="{Binding OpeningBankAmount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                              Style="{StaticResource InputTextBoxStyle}" />
                                 </StackPanel>
                             </WrapPanel>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                 <Button Width="96" Height="36" Content="Annuler"
+                                        TabIndex="4"
                                         Command="{Binding CancelOpeningFormCommand}"
                                         Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0" />
                                 <Button Width="150" Height="36" Content="Initialiser"
+                                        TabIndex="3"
                                         Command="{Binding CreateOpeningBalanceCommand}"
                                         Style="{StaticResource PrimaryButtonStyle}" />
                             </StackPanel>

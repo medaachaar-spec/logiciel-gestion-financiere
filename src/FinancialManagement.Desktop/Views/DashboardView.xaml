@@ -73,6 +73,7 @@
                     <StackPanel Width="170" Margin="0,0,18,12">
                     <Label Content="Date début" Target="{Binding ElementName=StartDatePicker}" Padding="0,0,0,6" />
                     <DatePicker x:Name="StartDatePicker"
+                                Style="{StaticResource InputDatePickerStyle}"
                                 SelectedDate="{Binding StartDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 SelectedDateFormat="Short"
                                 IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBooleanConverter}}" />
@@ -80,6 +81,7 @@
                     <StackPanel Width="170" Margin="0,0,18,12">
                     <Label Content="Date fin" Target="{Binding ElementName=EndDatePicker}" Padding="0,0,0,6" />
                     <DatePicker x:Name="EndDatePicker"
+                                Style="{StaticResource InputDatePickerStyle}"
                                 SelectedDate="{Binding EndDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                 SelectedDateFormat="Short"
                                 IsEnabled="{Binding IsLoading, Converter={StaticResource InverseBooleanConverter}}" />

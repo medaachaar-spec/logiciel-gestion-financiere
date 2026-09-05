@@ -22,7 +22,6 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <StackPanel Grid.Row="0" Margin="24,26,24,22">
@@ -69,14 +68,6 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <Border Grid.Row="3"
-                        BorderBrush="#354653"
-                        BorderThickness="0,1,0,0"
-                        Padding="24,16,24,20">
-                    <TextBlock Text="Structure de navigation"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="11" />
-                </Border>
             </Grid>
         </Border>
 
@@ -104,7 +95,7 @@
                                    Foreground="{StaticResource TextPrimaryBrush}"
                                    FontSize="20"
                                    FontWeight="SemiBold" />
-                        <TextBlock Text="Fondation de navigation"
+                        <TextBlock Text="Espace de gestion"
                                    Foreground="{StaticResource TextSecondaryBrush}"
                                    FontSize="12"
                                    Margin="0,4,0,0" />

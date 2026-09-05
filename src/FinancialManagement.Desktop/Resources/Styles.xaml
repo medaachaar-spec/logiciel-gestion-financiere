@@ -20,6 +20,13 @@
         <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
 
+    <Style x:Key="FieldLabelStyle" TargetType="Label">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="0,0,0,6" />
+    </Style>
+
     <Style x:Key="InputTextBoxStyle" TargetType="TextBox">
         <Setter Property="Padding" Value="12,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -52,6 +59,40 @@
         </Style.Triggers>
     </Style>
 
+    <Style x:Key="InputDatePickerStyle" TargetType="DatePicker">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="14" />
+        <Style.Triggers>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="InputComboBoxStyle" TargetType="ComboBox">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontSize" Value="14" />
+        <Style.Triggers>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
         <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
         <Setter Property="Foreground" Value="White" />
@@ -69,6 +110,10 @@
                                           VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ButtonSurface" Property="BorderBrush" Value="White" />
+                            <Setter TargetName="ButtonSurface" Property="BorderThickness" Value="2" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="ButtonSurface" Property="Background" Value="{StaticResource PrimaryHoverBrush}" />
                         </Trigger>
@@ -104,6 +149,10 @@
                                           VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ButtonSurface" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="ButtonSurface" Property="BorderThickness" Value="2" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="ButtonSurface" Property="Background" Value="{StaticResource BackgroundBrush}" />
                         </Trigger>
@@ -133,6 +182,8 @@
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="NavigationSurface"
                             Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="8">
                         <Grid MinHeight="42">
                             <Border x:Name="SelectionIndicator"
@@ -147,6 +198,13 @@
                         </Grid>
                     </Border>
                     <ControlTemplate.Triggers>
+                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                            <Setter TargetName="SelectionIndicator" Property="Opacity" Value="1" />
+                        </DataTrigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="NavigationSurface" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="NavigationSurface" Property="BorderThickness" Value="2" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="NavigationSurface" Property="Background" Value="{StaticResource SidebarHoverBrush}" />
                         </Trigger>

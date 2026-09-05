@@ -126,6 +126,14 @@ public sealed class DueAlertsViewModel : ViewModelBase
         private set => SetProperty(ref _overdueSupplierCount, value);
     }
 
+    public string CustomerSummary =>
+        $"Clients — {FormatCount(TotalCustomerAlertCount, "alerte", "alertes")}, "
+        + $"dont {OverdueCustomerCount} en retard";
+
+    public string SupplierSummary =>
+        $"Fournisseurs — {FormatCount(TotalSupplierAlertCount, "alerte", "alertes")}, "
+        + $"dont {OverdueSupplierCount} en retard";
+
     public Task LoadAsync(CancellationToken cancellationToken = default)
     {
         if (_initialLoadRequested || _isStopped)
@@ -261,6 +269,8 @@ public sealed class DueAlertsViewModel : ViewModelBase
         TotalSupplierAlertCount = result.TotalSupplierAlertCount;
         OverdueCustomerCount = result.OverdueCustomerCount;
         OverdueSupplierCount = result.OverdueSupplierCount;
+        OnPropertyChanged(nameof(CustomerSummary));
+        OnPropertyChanged(nameof(SupplierSummary));
         HasAlerts = result.TotalCustomerAlertCount != 0 || result.TotalSupplierAlertCount != 0;
         CurrentDateDescription = result.CurrentDate is DateOnly currentDate
             ? $"Situation au {currentDate:dd/MM/yyyy}"
@@ -278,7 +288,12 @@ public sealed class DueAlertsViewModel : ViewModelBase
         OverdueCustomerCount = 0;
         OverdueSupplierCount = 0;
         CurrentDateDescription = string.Empty;
+        OnPropertyChanged(nameof(CustomerSummary));
+        OnPropertyChanged(nameof(SupplierSummary));
         HasAlerts = false;
         HasData = false;
     }
+
+    private static string FormatCount(int count, string singular, string plural) =>
+        $"{count} {(count == 1 ? singular : plural)}";
 }

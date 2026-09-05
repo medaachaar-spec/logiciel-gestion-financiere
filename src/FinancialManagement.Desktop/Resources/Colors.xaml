@@ -14,7 +14,8 @@
     <Color x:Key="BorderColor">#E1E6EB</Color>
     <Color x:Key="DangerColor">#C84C4C</Color>
     <Color x:Key="AttentionColor">#A76608</Color>
-    <Color x:Key="SuccessColor">#2D9664</Color>
+    <Color x:Key="SuccessColor">#1F6F4A</Color>
+    <Color x:Key="SuccessSoftColor">#EAF7F0</Color>
 
     <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource BackgroundColor}" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />
@@ -31,4 +32,5 @@
     <SolidColorBrush x:Key="DangerBrush" Color="{StaticResource DangerColor}" />
     <SolidColorBrush x:Key="AttentionBrush" Color="{StaticResource AttentionColor}" />
     <SolidColorBrush x:Key="SuccessBrush" Color="{StaticResource SuccessColor}" />
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="{StaticResource SuccessSoftColor}" />
 </ResourceDictionary>

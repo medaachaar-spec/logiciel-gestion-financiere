@@ -61,7 +61,7 @@ public sealed class LoginViewModel : ViewModelBase
 
     public bool CanSubmit => !IsBusy;
 
-    public string SubmitButtonText => IsBusy ? "Connexion..." : "Se connecter";
+    public string SubmitButtonText => IsBusy ? "Connexion…" : "Se connecter";
 
     public async Task<bool> AuthenticateAsync(
         string password,
