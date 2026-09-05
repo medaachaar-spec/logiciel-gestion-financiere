@@ -5,6 +5,7 @@ using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
 using FinancialManagement.Application.Dashboard;
 using FinancialManagement.Desktop.Formatting;
+using FinancialManagement.Desktop.Services;
 
 namespace FinancialManagement.Desktop.ViewModels;
 
@@ -20,6 +21,7 @@ public sealed class DashboardViewModel : ViewModelBase
     private readonly IFinancialDashboardService _dashboardService;
     private readonly ICurrentUserSession _currentUserSession;
     private readonly IAuthorizationService _authorizationService;
+    private readonly DashboardOperationCoordinator _operationCoordinator;
     private readonly AsyncRelayCommand _refreshRelayCommand;
     private DateTime? _startDate;
     private DateTime? _endDate;
@@ -36,16 +38,22 @@ public sealed class DashboardViewModel : ViewModelBase
         IFinancialDashboardService dashboardService,
         ICurrentUserSession currentUserSession,
         IAuthorizationService authorizationService,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        DueAlertsViewModel dueAlerts,
+        DashboardOperationCoordinator operationCoordinator)
     {
         ArgumentNullException.ThrowIfNull(dashboardService);
         ArgumentNullException.ThrowIfNull(currentUserSession);
         ArgumentNullException.ThrowIfNull(authorizationService);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(dueAlerts);
+        ArgumentNullException.ThrowIfNull(operationCoordinator);
 
         _dashboardService = dashboardService;
         _currentUserSession = currentUserSession;
         _authorizationService = authorizationService;
+        _operationCoordinator = operationCoordinator;
+        DueAlerts = dueAlerts;
 
         var localToday = timeProvider.GetLocalNow().Date;
         _startDate = new DateTime(localToday.Year, localToday.Month, 1);
@@ -143,6 +151,8 @@ public sealed class DashboardViewModel : ViewModelBase
 
     public ObservableCollection<DashboardMetricViewModel> CurrentMetrics { get; } = [];
 
+    public DueAlertsViewModel DueAlerts { get; }
+
     public ICommand ApplyCommand { get; }
 
     public ICommand RefreshCommand { get; }
@@ -155,7 +165,8 @@ public sealed class DashboardViewModel : ViewModelBase
         }
 
         _initialLoadRequested = true;
-        return RefreshAsync(cancellationToken);
+        _pendingLoad = LoadInitialAsync(cancellationToken);
+        return _pendingLoad;
     }
 
     public Task RefreshAsync(CancellationToken cancellationToken = default)
@@ -179,6 +190,7 @@ public sealed class DashboardViewModel : ViewModelBase
         }
 
         _isStopped = true;
+        DueAlerts.Stop();
         ClearDashboardData();
         ErrorMessage = null;
         IsLoading = false;
@@ -186,10 +198,19 @@ public sealed class DashboardViewModel : ViewModelBase
         _loadCancellation?.Cancel();
     }
 
-    public Task StopAsync()
+    public async Task StopAsync()
     {
         Stop();
-        return _pendingLoad;
+        await Task.WhenAll(_pendingLoad, DueAlerts.StopAsync());
+    }
+
+    private async Task LoadInitialAsync(CancellationToken cancellationToken)
+    {
+        await LoadCoreAsync(cancellationToken);
+        if (!_isStopped)
+        {
+            await DueAlerts.LoadAsync(cancellationToken);
+        }
     }
 
     private async Task LoadCoreAsync(CancellationToken cancellationToken)
@@ -215,7 +236,9 @@ public sealed class DashboardViewModel : ViewModelBase
             }
 
             var userId = _currentUserSession.UserId;
-            var result = await _dashboardService.GetAsync(query, cancellation.Token);
+            var result = await _operationCoordinator.RunAsync(
+                token => _dashboardService.GetAsync(query, token),
+                cancellation.Token);
             if (_isStopped || cancellation.IsCancellationRequested)
             {
                 return;

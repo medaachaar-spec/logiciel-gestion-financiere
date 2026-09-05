@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:FinancialManagement.Desktop.ViewModels"
+             xmlns:views="clr-namespace:FinancialManagement.Desktop.Views"
              mc:Ignorable="d"
              Language="fr-FR"
              Loaded="DashboardView_OnLoaded">
@@ -140,6 +141,8 @@
                     </ItemsControl.ItemsPanel>
                 </ItemsControl>
             </StackPanel>
+
+            <views:DueAlertsView DataContext="{Binding DueAlerts}" Margin="0,24,0,0" />
         </StackPanel>
     </ScrollViewer>
 </UserControl>
