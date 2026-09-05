@@ -1,4 +1,7 @@
 using System.Security.Cryptography;
+using System.IO.Compression;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Backup;
 using FinancialManagement.Domain.Entities;
@@ -10,12 +13,49 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace FinancialManagement.Tests;
 
-public sealed class DatabaseBackupServiceTests
+public sealed class DatabaseBackupServiceTests(ITestOutputHelper output)
 {
     private static readonly DateTimeOffset TestUtc = new(2026, 9, 4, 12, 30, 45, TimeSpan.Zero);
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(10)]
+    public async Task Backup_WalOnlyCommitProducesSelfContainedSnapshot(int iteration)
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        await fixture.Context.Database.OpenConnectionAsync();
+        await fixture.Context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);");
+        await fixture.Context.Database.ExecuteSqlRawAsync("PRAGMA wal_autocheckpoint=0;");
+        await fixture.AddRepresentativeDataAsync($"Gate-{iteration}");
+        Assert.True(new FileInfo(fixture.LivePath + "-wal").Length > 32);
+        var oracle = Path.Combine(fixture.Root, "main-only-oracle.db");
+        File.Copy(fixture.LivePath, oracle);
+        Assert.Equal(0, await ScalarLongAsync(oracle, "SELECT COUNT(*) FROM Sales;"));
+
+        var backup = await fixture.Service.CreateLocalBackupAsync();
+        Assert.True(backup.Success);
+        Assert.False(File.Exists(backup.BackupPath + "-wal"));
+        Assert.False(File.Exists(backup.BackupPath + "-shm"));
+        var standalone = Path.Combine(Directory.CreateDirectory(Path.Combine(fixture.Root, "isolated")).FullName, "database.sqlite");
+        File.Copy(await ExtractForInspectionAsync(backup.BackupPath!), standalone);
+        Assert.False(File.Exists(standalone + "-wal"));
+        Assert.False(File.Exists(standalone + "-shm"));
+        Assert.Equal(125_075, await ScalarLongAsync(standalone, "SELECT TotalAmountMinor FROM Sales;"));
+        Assert.Equal("ok", await ScalarStringAsync(standalone, "PRAGMA integrity_check;"));
+        Assert.Equal(0, await ScalarLongAsync(standalone, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
+    }
 
     [Fact]
     public async Task Operations_RequireAnAuthenticatedResponsable()
@@ -49,6 +89,9 @@ public sealed class DatabaseBackupServiceTests
         Assert.NotEqual(first.BackupPath, second.BackupPath);
         Assert.True(File.Exists(first.BackupPath));
         Assert.True(first.FileSizeBytes > 0);
+        Assert.Equal(".fmbak", Path.GetExtension(first.BackupPath));
+        Assert.Empty(Directory.GetDirectories(fixture.BackupDirectory));
+        Assert.All(Directory.GetFiles(fixture.BackupDirectory), path => Assert.EndsWith(".fmbak", path));
         Assert.Equal(TestUtc, first.CreatedAtUtc);
         Assert.StartsWith("FinancialManagement_Backup_20260904_123045_000_", first.FileName);
 
@@ -75,10 +118,11 @@ public sealed class DatabaseBackupServiceTests
         var result = await fixture.Service.CreateLocalBackupAsync();
         Assert.True(result.Success);
 
-        await using var backup = fixture.CreateIndependentContext(result.BackupPath!);
-        Assert.Equal("ok", await ScalarStringAsync(result.BackupPath!, "PRAGMA integrity_check;"));
-        Assert.Equal(0L, await ScalarLongAsync(result.BackupPath!, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
-        Assert.Equal(3L, await ScalarLongAsync(result.BackupPath!, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
+        var databasePath = await ExtractForInspectionAsync(result.BackupPath!);
+        await using var backup = fixture.CreateIndependentContext(databasePath);
+        Assert.Equal("ok", await ScalarStringAsync(databasePath, "PRAGMA integrity_check;"));
+        Assert.Equal(0L, await ScalarLongAsync(databasePath, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
+        Assert.Equal(3L, await ScalarLongAsync(databasePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
         Assert.Equal(1, await backup.Clients.CountAsync(client => client.Name == "Client A"));
         Assert.Equal(125_075, await backup.Sales.Where(sale => sale.Reference == "SALE-A").Select(sale => sale.TotalAmountMinor).SingleAsync());
         Assert.Equal(80_000, await backup.Purchases.Where(purchase => purchase.Reference == "PURCHASE-A").Select(purchase => purchase.TotalAmountMinor).SingleAsync());
@@ -119,9 +163,10 @@ public sealed class DatabaseBackupServiceTests
         Assert.Equal(1, await restored.Clients.CountAsync(client => client.Name == "Client A"));
         Assert.Equal(0, await restored.Clients.CountAsync(client => client.Name == "Client B"));
 
-        await using var safety = fixture.CreateIndependentContext(result.PreRestoreBackupPath!);
+        var safetyPath = await ExtractForInspectionAsync(result.PreRestoreBackupPath!);
+        await using var safety = fixture.CreateIndependentContext(safetyPath);
         Assert.Equal(1, await safety.Clients.CountAsync(client => client.Name == "Client B"));
-        Assert.Equal("ok", await ScalarStringAsync(result.PreRestoreBackupPath!, "PRAGMA integrity_check;"));
+        Assert.Equal("ok", await ScalarStringAsync(safetyPath, "PRAGMA integrity_check;"));
     }
 
     [Fact]
@@ -144,6 +189,85 @@ public sealed class DatabaseBackupServiceTests
         await using var restored = fixture.CreateIndependentContext(fixture.LivePath);
         Assert.Equal(1, await restored.Clients.CountAsync(client => client.Name == "State A"));
         Assert.Equal(0, await restored.Clients.CountAsync(client => client.Name == "State B in WAL"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Restore_IncludesCommittedSourceWalWithoutChangingArtifact(bool commitAfterRead)
+    {
+        await using var source = await BackupFixture.CreateAsync(authenticate: true);
+        await using var destination = await BackupFixture.CreateAsync(authenticate: true);
+        destination.Context.Clients.Add(NewClient("Destination B"));
+        await destination.Context.SaveChangesAsync();
+
+        await source.Context.Database.OpenConnectionAsync();
+        await source.Context.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);");
+        await source.Context.Database.ExecuteSqlRawAsync("PRAGMA wal_autocheckpoint = 0;");
+        var userId = await source.Context.Users.Select(user => user.Id).SingleAsync();
+        var client = NewClient("Source A");
+        source.Context.Clients.Add(client);
+        await source.Context.SaveChangesAsync();
+        source.Context.Sales.Add(new Sale
+        {
+            Reference = "ASTRA-001-WAL-COMMIT",
+            ClientId = client.Id,
+            SaleDate = new DateOnly(2026, 9, 4),
+            TotalAmountMinor = 123,
+            CreatedByUserId = userId,
+            CreatedAtUtc = TestUtc,
+            UpdatedAtUtc = TestUtc
+        });
+        await source.Context.SaveChangesAsync();
+        Assert.Equal(123, await source.Context.Sales.AsNoTracking()
+            .Where(sale => sale.Reference == "ASTRA-001-WAL-COMMIT")
+            .Select(sale => sale.TotalAmountMinor).SingleAsync());
+
+        if (commitAfterRead)
+        {
+            // Leave the latest commit beyond the existing SHM read mark. A plain
+            // read-only database connection may otherwise appear immutable by chance.
+            await source.Context.Database.ExecuteSqlRawAsync(
+                "UPDATE Sales SET Observation = 'Committed after read' WHERE Reference = 'ASTRA-001-WAL-COMMIT';");
+        }
+
+        Assert.True(new FileInfo(source.LivePath + "-wal").Length > 32);
+        Assert.True(new FileInfo(source.LivePath + "-shm").Length > 0);
+        // Test oracle only: demonstrate that copying the main file would omit the sale.
+        var mainOnlyPath = Path.Combine(source.Root, "main-only-oracle.db");
+        File.Copy(source.LivePath, mainOnlyPath);
+        await using (var mainOnly = source.CreateIndependentContext(mainOnlyPath))
+        {
+            Assert.False(await mainOnly.Sales.AnyAsync(sale => sale.Reference == "ASTRA-001-WAL-COMMIT"));
+        }
+
+        var backup = await source.Service.CreateLocalBackupAsync();
+        Assert.True(backup.Success);
+        var artifactPath = Path.Combine(destination.Root, "wal-snapshot.fmbak");
+        File.Copy(backup.BackupPath!, artifactPath);
+        // Restore cannot consult the source database or its WAL: close and remove
+        // the synthetic live source after the completed artifact has been copied.
+        await source.Context.Database.CloseConnectionAsync();
+        SqliteConnection.ClearAllPools();
+        foreach (var suffix in new[] { "", "-wal", "-shm" }) File.Delete(source.LivePath + suffix);
+        var hashBefore = await HashFileAsync(artifactPath);
+        var result = await destination.Service.RestoreAsync(new(artifactPath));
+
+        Assert.True(result.Success);
+        Assert.True(result.RestartRequired);
+        var hashAfter = await HashFileAsync(artifactPath);
+        output.WriteLine($"artifact before={Convert.ToHexString(hashBefore)}; after={Convert.ToHexString(hashAfter)}");
+        Assert.Equal(hashBefore, hashAfter);
+
+        await using var restored = destination.CreateIndependentContext(destination.LivePath);
+        var restoredSale = await restored.Sales.AsNoTracking().SingleAsync(sale => sale.Reference == "ASTRA-001-WAL-COMMIT");
+        Assert.Equal(123, restoredSale.TotalAmountMinor);
+        Assert.Equal(commitAfterRead ? "Committed after read" : null, restoredSale.Observation);
+        Assert.False(await restored.Clients.AnyAsync(item => item.Name == "Destination B"));
+        Assert.Equal("ok", await ScalarStringAsync(destination.LivePath, "PRAGMA integrity_check;"));
+        Assert.Equal(0, await ScalarLongAsync(destination.LivePath, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
+        Assert.Equal(source.Context.Database.GetMigrations().ToArray(),
+            (await restored.Database.GetAppliedMigrationsAsync()).ToArray());
     }
 
     [Fact]
@@ -189,7 +313,7 @@ public sealed class DatabaseBackupServiceTests
         Assert.Equal(1L, await ScalarLongAsync(fixture.LivePath,
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='UX_TreasuryOpeningBalance_Singleton';"));
 
-        await using var safety = fixture.CreateIndependentContext(result.PreRestoreBackupPath!);
+        await using var safety = fixture.CreateIndependentContext(await ExtractForInspectionAsync(result.PreRestoreBackupPath!));
         Assert.Equal(1, await safety.Clients.CountAsync(client => client.Name == "Live B"));
     }
 
@@ -235,11 +359,12 @@ public sealed class DatabaseBackupServiceTests
         await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
         var oldBackup = Path.Combine(fixture.Root, "old-002.db");
         await CreateApplicationDatabaseAsync(oldBackup, migrationCount: 2, activeResponsible: true, clientName: "Old data");
-        var hashBefore = await HashFileAsync(oldBackup);
+        var artifactPath = await PackDatabaseAsync(oldBackup);
+        var hashBefore = await HashFileAsync(artifactPath);
 
-        var result = await fixture.Service.RestoreAsync(new(oldBackup));
+        var result = await fixture.Service.RestoreAsync(new(artifactPath));
         Assert.True(result.Success);
-        Assert.Equal(hashBefore, await HashFileAsync(oldBackup));
+        Assert.Equal(hashBefore, await HashFileAsync(artifactPath));
         Assert.Equal(2L, await ScalarLongAsync(oldBackup, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
         Assert.Equal(3L, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
         Assert.Equal(1L, await ScalarLongAsync(fixture.LivePath,
@@ -259,7 +384,7 @@ public sealed class DatabaseBackupServiceTests
             "INSERT INTO TreasuryOpeningBalance(OpeningDate,CashAmountMinor,BankAmountMinor,CreatedByUserId,CreatedAtUtc) " +
             "VALUES ('2026-01-01',0,0,1,'2026-01-01 00:00:00+00:00'),('2026-01-02',0,0,1,'2026-01-02 00:00:00+00:00');");
 
-        var result = await fixture.Service.RestoreAsync(new(oldBackup));
+        var result = await fixture.Service.RestoreAsync(new(await PackDatabaseAsync(oldBackup)));
         Assert.Equal(DatabaseBackupFailureReason.IncompatibleBackup, result.FailureReason);
         await fixture.AssertLiveMarkerAsync();
         Assert.Equal(2L, await ScalarLongAsync(oldBackup, "SELECT COUNT(*) FROM TreasuryOpeningBalance;"));
@@ -364,22 +489,223 @@ public sealed class DatabaseBackupServiceTests
         UpdatedAtUtc = TestUtc
     };
 
+    [Theory]
+    [InlineData("hash")]
+    [InlineData("truncated")]
+    [InlineData("missing-manifest")]
+    [InlineData("missing-database")]
+    [InlineData("duplicate-manifest")]
+    [InlineData("duplicate-database")]
+    [InlineData("../escape.sqlite")]
+    [InlineData("..\\escape.sqlite")]
+    [InlineData("/escape.sqlite")]
+    [InlineData("C:\\escape.sqlite")]
+    [InlineData("extra-entry")]
+    [InlineData("version")]
+    [InlineData("format")]
+    [InlineData("length")]
+    [InlineData("database-name")]
+    [InlineData("duplicate-field")]
+    [InlineData("oversized-manifest")]
+    [InlineData("compressed")]
+    [InlineData("invalid-json")]
+    [InlineData("invalid-hash")]
+    [InlineData("directory-count")]
+    [InlineData("directory-size")]
+    public async Task Restore_RejectsMalformedArtifactsBeforeSwap(string fault)
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        fixture.Context.Clients.Add(NewClient("Live marker"));
+        await fixture.Context.SaveChangesAsync();
+        var valid = await fixture.Service.CreateLocalBackupAsync();
+        Assert.True(valid.Success);
+        var databasePath = await ExtractForInspectionAsync(valid.BackupPath!);
+        var database = await File.ReadAllBytesAsync(databasePath);
+        var manifestBytes = ManifestFor(database);
+        var manifest = JsonNode.Parse(manifestBytes)!;
+        switch (fault)
+        {
+            case "hash": database[0] ^= 0xff; break;
+            case "version": manifest["BackupFormatVersion"] = 2; break;
+            case "format": manifest["BackupFormat"] = "OtherApplication"; break;
+            case "length": manifest["DatabaseLength"] = database.LongLength + 1; break;
+            case "database-name": manifest["DatabaseFileName"] = "../elsewhere.db"; break;
+            case "invalid-hash": manifest["DatabaseSha256"] = new string('Z', 64); break;
+        }
+        manifestBytes = JsonSerializer.SerializeToUtf8Bytes(manifest);
+        if (fault == "duplicate-field")
+            manifestBytes = System.Text.Encoding.UTF8.GetBytes("{\"BackupFormatVersion\":1," + System.Text.Encoding.UTF8.GetString(manifestBytes)[1..]);
+        if (fault == "oversized-manifest") manifestBytes = new byte[16 * 1024 + 1];
+        if (fault == "invalid-json") manifestBytes = "not-json"u8.ToArray();
+        var entries = new List<(string Name, byte[] Bytes)> { ("database.sqlite", database), ("manifest.json", manifestBytes) };
+        if (fault == "missing-manifest") entries.RemoveAt(1);
+        if (fault == "missing-database") entries.RemoveAt(0);
+        if (fault == "duplicate-manifest") entries.Add(("manifest.json", manifestBytes));
+        if (fault == "duplicate-database") entries.Add(("database.sqlite", database));
+        if (fault.Contains("escape.sqlite", StringComparison.Ordinal)) entries[0] = (fault, database);
+        if (fault == "extra-entry") entries.Add(("unexpected.txt", [1]));
+        var artifact = Path.Combine(fixture.Root, "invalid.fmbak");
+        await WriteArchiveAsync(artifact, entries, fault == "compressed" ? CompressionLevel.SmallestSize : CompressionLevel.NoCompression);
+        if (fault == "truncated")
+        {
+            using var file = File.OpenWrite(artifact);
+            file.SetLength(file.Length / 2);
+        }
+        if (fault == "directory-count" || fault == "directory-size")
+        {
+            var bytes = await File.ReadAllBytesAsync(artifact);
+            bytes[bytes.Length - 22 + (fault == "directory-count" ? 10 : 12)] ^= 0xff;
+            await File.WriteAllBytesAsync(artifact, bytes);
+        }
+        var filesBefore = Directory.GetFiles(fixture.Root, "*", SearchOption.AllDirectories).Order().ToArray();
+        var liveBefore = await HashFileAsync(fixture.LivePath);
+        var swap = false;
+        fixture.RestoreTestHook.AfterAtomicReplace = _ => swap = true;
+        await AssertRestoreRejectedAndLiveIntactAsync(fixture, artifact,
+            fault == "version" ? DatabaseBackupFailureReason.IncompatibleBackup : DatabaseBackupFailureReason.InvalidBackup);
+        Assert.False(swap);
+        Assert.True(fixture.Session.IsAuthenticated);
+        Assert.Equal(liveBefore, await HashFileAsync(fixture.LivePath));
+        Assert.Equal(filesBefore, Directory.GetFiles(fixture.Root, "*", SearchOption.AllDirectories).Order().ToArray());
+    }
+
+    [Theory]
+    [InlineData(".db")]
+    [InlineData(".sqlite")]
+    [InlineData(".db-wal")]
+    [InlineData(".zip")]
+    [InlineData(".fmbak")]
+    public async Task Restore_RejectsLooseSqliteEvenWhenRenamed(string extension)
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        var database = Path.Combine(fixture.Root, "loose" + extension);
+        await CreateApplicationDatabaseAsync(database, 3, activeResponsible: true);
+        var hashBefore = await HashFileAsync(database);
+        var result = await fixture.Service.RestoreAsync(new(database));
+        Assert.False(result.Success);
+        Assert.Equal(DatabaseBackupFailureReason.InvalidBackup, result.FailureReason);
+        Assert.Null(result.PreRestoreBackupPath);
+        Assert.Equal(hashBefore, await HashFileAsync(database));
+    }
+
+    [Fact]
+    public async Task Restore_RejectsArtifactWithValidChecksumButBrokenForeignKey()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        fixture.Context.Clients.Add(NewClient("Live marker"));
+        await fixture.Context.SaveChangesAsync();
+        var database = Path.Combine(fixture.Root, "broken-fk.db");
+        await CreateApplicationDatabaseAsync(database, 3, activeResponsible: true);
+        await ExecuteAsync(database, "PRAGMA foreign_keys=OFF; INSERT INTO UserPermissions(UserId,Module,CanView,CanCreate,CanModify) VALUES (999,'Sales',1,0,0);");
+        await AssertRestoreRejectedAndLiveIntactAsync(fixture, await PackDatabaseAsync(database), DatabaseBackupFailureReason.InvalidBackup);
+    }
+
+    [Fact]
+    public async Task Backup_UnreadableLiveDatabasePublishesNoArtifactAndCleansWorkspace()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        await fixture.Context.Database.CloseConnectionAsync();
+        SqliteConnection.ClearAllPools();
+        await File.WriteAllTextAsync(fixture.LivePath, "not a SQLite database");
+        var result = await fixture.Service.CreateLocalBackupAsync();
+        Assert.False(result.Success);
+        Assert.Empty(Directory.GetFileSystemEntries(fixture.BackupDirectory));
+    }
+
+    [Fact]
+    public async Task Restore_AcceptsBoundedZip64Envelope()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        var backup = await fixture.Service.CreateLocalBackupAsync();
+        Assert.True(backup.Success);
+        var bytes = await File.ReadAllBytesAsync(backup.BackupPath!);
+        var endOffset = bytes.Length - 22;
+        var directorySize = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(endOffset + 12));
+        var directoryOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(endOffset + 16));
+        using var stream = new MemoryStream();
+        stream.Write(bytes, 0, endOffset);
+        using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(0x06064b50u); writer.Write(44UL);
+            writer.Write((ushort)45); writer.Write((ushort)45);
+            writer.Write(0u); writer.Write(0u);
+            writer.Write(2UL); writer.Write(2UL);
+            writer.Write((ulong)directorySize); writer.Write((ulong)directoryOffset);
+            writer.Write(0x07064b50u); writer.Write(0u);
+            writer.Write((ulong)endOffset); writer.Write(1u);
+        }
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(endOffset + 16), uint.MaxValue);
+        stream.Write(bytes, endOffset, 22);
+        var path = Path.Combine(fixture.Root, "zip64.fmbak");
+        await File.WriteAllBytesAsync(path, stream.ToArray());
+        var result = await fixture.Service.RestoreAsync(new(path));
+        Assert.True(result.Success);
+        Assert.Equal("ok", await ScalarStringAsync(fixture.LivePath, "PRAGMA integrity_check;"));
+    }
+
     private static async Task AssertRestoreRejectedAndLiveIntactAsync(
         BackupFixture fixture,
         string sourcePath,
         DatabaseBackupFailureReason expectedFailure)
     {
+        if (Path.GetExtension(sourcePath) != ".fmbak") sourcePath = await PackDatabaseAsync(sourcePath);
         var sourceHash = await HashFileAsync(sourcePath);
         var result = await fixture.Service.RestoreAsync(new(sourcePath));
         Assert.False(result.Success);
         Assert.Equal(expectedFailure, result.FailureReason);
         Assert.Equal(sourceHash, await HashFileAsync(sourcePath));
+        Assert.Null(result.PreRestoreBackupPath);
+        Assert.False(result.RestartRequired);
+        Assert.Empty(Directory.GetFiles(fixture.Root, "FinancialManagement_Restore*"));
         await fixture.AssertLiveMarkerAsync();
+    }
+
+    private static byte[] ManifestFor(byte[] database) => JsonSerializer.SerializeToUtf8Bytes(new
+    {
+        BackupFormat = "FinancialManagementBackup", BackupFormatVersion = 1, CreatedAtUtc = TestUtc,
+        DatabaseFileName = "database.sqlite", DatabaseLength = database.LongLength,
+        DatabaseSha256 = Convert.ToHexString(SHA256.HashData(database))
+    });
+
+    private static async Task WriteArchiveAsync(string path, IEnumerable<(string Name, byte[] Bytes)> entries,
+        CompressionLevel compression = CompressionLevel.NoCompression)
+    {
+        await using var file = File.Create(path);
+        using var archive = new ZipArchive(file, ZipArchiveMode.Create);
+        foreach (var (name, bytes) in entries)
+        {
+            using var entry = archive.CreateEntry(name, compression).Open();
+            await entry.WriteAsync(bytes);
+        }
+    }
+
+    private static async Task<string> PackDatabaseAsync(string databasePath)
+    {
+        var database = await File.ReadAllBytesAsync(databasePath);
+        var artifact = databasePath + ".fmbak";
+        await WriteArchiveAsync(artifact, [("database.sqlite", database), ("manifest.json", ManifestFor(database))]);
+        return artifact;
+    }
+
+    private static async Task<string> ExtractForInspectionAsync(string artifactPath)
+    {
+        using var archive = ZipFile.OpenRead(artifactPath);
+        Assert.Equal(new[] { "database.sqlite", "manifest.json" }, archive.Entries.Select(entry => entry.FullName).Order().ToArray());
+        var directory = Directory.CreateDirectory(Path.Combine(Path.GetDirectoryName(artifactPath)!, "inspection-" + Guid.NewGuid().ToString("N"))).FullName;
+        var databasePath = Path.Combine(directory, "database.sqlite");
+        await using (var database = File.Create(databasePath))
+        using (var entry = archive.GetEntry("database.sqlite")!.Open())
+            await entry.CopyToAsync(database);
+        using var manifestStream = archive.GetEntry("manifest.json")!.Open();
+        using var manifest = await JsonDocument.ParseAsync(manifestStream);
+        Assert.Equal(new FileInfo(databasePath).Length, manifest.RootElement.GetProperty("DatabaseLength").GetInt64());
+        Assert.Equal(Convert.ToHexString(await HashFileAsync(databasePath)), manifest.RootElement.GetProperty("DatabaseSha256").GetString());
+        return databasePath;
     }
 
     private static async Task<byte[]> HashFileAsync(string path)
     {
-        await using var stream = File.OpenRead(path);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         return await SHA256.HashDataAsync(stream);
     }
 

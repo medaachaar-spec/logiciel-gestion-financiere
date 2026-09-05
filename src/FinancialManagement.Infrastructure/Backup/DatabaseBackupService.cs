@@ -83,7 +83,8 @@ internal sealed class DatabaseBackupService(
             return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.BackupFileNotFound);
         }
 
-        if (string.Equals(sourcePath, livePath, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sourcePath, livePath, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Path.GetExtension(sourcePath), DatabaseBackupArtifact.Extension, StringComparison.OrdinalIgnoreCase))
         {
             return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.InvalidBackup, sourcePath);
         }
@@ -98,7 +99,9 @@ internal sealed class DatabaseBackupService(
         {
             cancellationToken.ThrowIfCancellationRequested();
             stagingPath = CreateUnusedPath(Path.GetDirectoryName(livePath)!, "RestoreStaging");
-            File.Copy(sourcePath, stagingPath, overwrite: false);
+            var artifactFailure = await DatabaseBackupArtifact.ExtractAsync(sourcePath, stagingPath, cancellationToken);
+            if (artifactFailure != DatabaseBackupFailureReason.None)
+                return RestoreDatabaseBackupResult.Failed(artifactFailure, sourcePath);
 
             var knownMigrations = dbContext.Database.GetMigrations().ToArray();
             var stagingValidation = await ValidateDatabaseAsync(
@@ -148,11 +151,15 @@ internal sealed class DatabaseBackupService(
             DeleteSidecarsBestEffort(stagingPath);
             cancellationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(options.LocalBackupDirectory);
-            preRestorePath = CreateUniquePath(options.LocalBackupDirectory, "PreRestore");
-
             try
             {
-                BackupDatabase(livePath, preRestorePath);
+                // Already inside the maintenance lock: share the official artifact
+                // pipeline, without re-entering the semaphore or changing authorization.
+                var safety = await CreateArtifactBackupAsync(options.LocalBackupDirectory, "PreRestore",
+                    requireActiveResponsible: true, cancellationToken);
+                if (!safety.Success)
+                    return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.RestoreFailed, sourcePath);
+                preRestorePath = safety.BackupPath;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SqliteException)
             {
@@ -160,20 +167,6 @@ internal sealed class DatabaseBackupService(
                 DeleteDatabaseFilesBestEffort(preRestorePath);
                 preRestorePath = null;
                 return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.StorageFailure, sourcePath);
-            }
-
-            var safetyValidation = await ValidateDatabaseAsync(
-                preRestorePath,
-                knownMigrations,
-                requireCurrentSchema: true,
-                requireActiveResponsible: true,
-                cancellationToken);
-
-            if (!safetyValidation.IsValid)
-            {
-                DeleteDatabaseFilesBestEffort(preRestorePath);
-                preRestorePath = null;
-                return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.RestoreFailed, sourcePath);
             }
 
             await CheckpointAndCloseAsync(livePath, cancellationToken);
@@ -238,7 +231,7 @@ internal sealed class DatabaseBackupService(
             swapCompleted = false;
             currentUserSession.Clear();
 
-            return RestoreDatabaseBackupResult.Succeeded(sourcePath, preRestorePath);
+            return RestoreDatabaseBackupResult.Succeeded(sourcePath, preRestorePath!);
         }
         catch (CriticalDatabaseRestoreException)
         {
@@ -314,8 +307,6 @@ internal sealed class DatabaseBackupService(
         }
 
         await maintenanceLock.Semaphore.WaitAsync(cancellationToken);
-        string? backupPath = null;
-
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -329,42 +320,65 @@ internal sealed class DatabaseBackupService(
                     DatabaseBackupFailureReason.DestinationDirectoryNotFound);
             }
 
-            var createdAtUtc = timeProvider.GetUtcNow();
-            backupPath = CreateUniquePath(destinationDirectory, nameKind, createdAtUtc);
-            BackupDatabase(GetLiveDatabasePath(), backupPath);
-
-            cancellationToken.ThrowIfCancellationRequested();
-            var validation = await ValidateDatabaseAsync(
-                backupPath,
-                dbContext.Database.GetMigrations().ToArray(),
-                requireCurrentSchema: true,
-                requireActiveResponsible: false,
-                cancellationToken);
-
-            if (!validation.IsValid)
-            {
-                DeleteDatabaseFilesBestEffort(backupPath);
-                return CreateDatabaseBackupResult.Failed(validation.FailureReason);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            var fileSize = new FileInfo(backupPath).Length;
-            return CreateDatabaseBackupResult.Succeeded(backupPath, createdAtUtc, fileSize);
-        }
-        catch (OperationCanceledException)
-        {
-            DeleteDatabaseFilesBestEffort(backupPath);
-            throw;
+            return await CreateArtifactBackupAsync(destinationDirectory, nameKind,
+                requireActiveResponsible: false, cancellationToken);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SqliteException)
         {
             logger?.LogWarning(exception, "The database backup could not be created.");
-            DeleteDatabaseFilesBestEffort(backupPath);
             return CreateDatabaseBackupResult.Failed(DatabaseBackupFailureReason.StorageFailure);
         }
         finally
         {
             maintenanceLock.Semaphore.Release();
+        }
+    }
+
+    private async Task<CreateDatabaseBackupResult> CreateArtifactBackupAsync(
+        string destinationDirectory, string nameKind, bool requireActiveResponsible, CancellationToken cancellationToken)
+    {
+        var createdAtUtc = timeProvider.GetUtcNow();
+        var token = Guid.NewGuid().ToString("N");
+        var workspace = Path.Combine(destinationDirectory, $".fmbackup-{token}.tmp");
+        var snapshotPath = Path.Combine(workspace, "snapshot.sqlite");
+        var databasePath = Path.Combine(workspace, "database.sqlite");
+        var pendingPath = Path.Combine(destinationDirectory, $".fmbackup-{token}.partial");
+        var backupPath = Path.Combine(destinationDirectory,
+            $"FinancialManagement_{nameKind}_{createdAtUtc:yyyyMMdd_HHmmss_fff}_{token}{DatabaseBackupArtifact.Extension}");
+        try
+        {
+            Directory.CreateDirectory(workspace);
+            BackupDatabase(GetLiveDatabasePath(), snapshotPath);
+            // The Backup API has closed its destination. Move only this newly
+            // generated snapshot to a fresh name, never an arbitrary restore source.
+            if (File.Exists(snapshotPath + "-wal") && new FileInfo(snapshotPath + "-wal").Length != 0)
+                return CreateDatabaseBackupResult.Failed(DatabaseBackupFailureReason.InvalidBackup);
+            File.Move(snapshotPath, databasePath);
+            var validation = await ValidateDatabaseAsync(databasePath, dbContext.Database.GetMigrations().ToArray(),
+                requireCurrentSchema: true, requireActiveResponsible, cancellationToken);
+            if (!validation.IsValid)
+                return CreateDatabaseBackupResult.Failed(validation.FailureReason);
+            await CheckpointAndCloseAsync(databasePath, cancellationToken);
+            DeleteSidecarsBestEffort(databasePath);
+            await DatabaseBackupArtifact.WriteAsync(databasePath, pendingPath, createdAtUtc, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            var fileSize = new FileInfo(pendingPath).Length;
+            // Same destination directory/filesystem, no overwrite and no copy fallback.
+            // The final .fmbak name becomes visible only after ZIP/streams are closed.
+            File.Move(pendingPath, backupPath, overwrite: false);
+            return CreateDatabaseBackupResult.Succeeded(backupPath, createdAtUtc, fileSize);
+        }
+        catch (InvalidDataException)
+        {
+            return CreateDatabaseBackupResult.Failed(DatabaseBackupFailureReason.InvalidBackup);
+        }
+        finally
+        {
+            DeleteFileBestEffort(pendingPath);
+            DeleteDatabaseFilesBestEffort(snapshotPath);
+            DeleteDatabaseFilesBestEffort(databasePath);
+            try { Directory.Delete(workspace); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         }
     }
 
