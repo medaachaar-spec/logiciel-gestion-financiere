@@ -136,12 +136,9 @@
                 </Grid>
             </Border>
 
-            <ScrollViewer Grid.Row="1"
-                          Padding="32"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled">
-                <ContentControl Content="{Binding CurrentPage}" />
-            </ScrollViewer>
+            <ContentControl Grid.Row="1"
+                            Margin="24"
+                            Content="{Binding CurrentPage}" />
         </Grid>
     </Grid>
 </Window>

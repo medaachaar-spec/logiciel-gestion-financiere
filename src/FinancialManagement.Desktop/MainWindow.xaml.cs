@@ -27,9 +27,12 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _viewModel.Stop();
         _viewModel.LogoutRequested -= ViewModel_LogoutRequested;
         base.OnClosed(e);
     }
+
+    public Task StopAsync() => _viewModel.StopAsync();
 
     private void ViewModel_LogoutRequested(object? sender, EventArgs e)
     {

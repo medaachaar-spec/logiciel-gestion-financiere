@@ -13,7 +13,7 @@ public sealed class NavigationItemViewModel : ViewModelBase
         string title,
         string iconGlyph,
         string pageKey,
-        PlaceholderPageViewModel page,
+        ViewModelBase page,
         ICommand command,
         PermissionModule? requiredModule = null,
         ResponsibleCapability? requiredCapability = null)
@@ -34,7 +34,7 @@ public sealed class NavigationItemViewModel : ViewModelBase
 
     public string PageKey { get; }
 
-    public PlaceholderPageViewModel Page { get; }
+    public ViewModelBase Page { get; }
 
     public ICommand Command { get; }
 

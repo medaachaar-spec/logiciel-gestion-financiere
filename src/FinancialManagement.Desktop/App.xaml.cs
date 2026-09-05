@@ -96,6 +96,9 @@ public partial class App : System.Windows.Application
         services.AddInfrastructure(connectionString);
         services.AddTransient<LoginViewModel>();
         services.AddTransient<LoginWindow>();
+        services.AddTransient<DashboardViewModel>();
+        services.AddTransient(provider => new Lazy<DashboardViewModel>(
+            () => provider.GetRequiredService<DashboardViewModel>()));
         services.AddTransient<ShellViewModel>();
         services.AddTransient<MainWindow>();
 
@@ -154,6 +157,7 @@ public partial class App : System.Windows.Application
         finally
         {
             mainWindow.LogoutRequested -= HandleLogoutRequested;
+            await mainWindow.StopAsync();
         }
     }
 }
