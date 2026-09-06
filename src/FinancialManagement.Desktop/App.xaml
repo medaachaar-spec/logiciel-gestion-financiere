@@ -26,6 +26,10 @@
                 <views:SalesView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type vm:PurchasesViewModel}">
+                <views:PurchasesView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type vm:PlaceholderPageViewModel}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <views:PlaceholderPageView />
