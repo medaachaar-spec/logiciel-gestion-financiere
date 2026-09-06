@@ -830,6 +830,8 @@ public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
         public IDatabaseBackupService Service { get; }
         public ICurrentUserSession Session { get; }
         public DatabaseRestoreTestHook RestoreTestHook { get; }
+        public DatabaseMaintenanceLock MaintenanceLock => scope.ServiceProvider.GetRequiredService<DatabaseMaintenanceLock>();
+        public IServiceProvider Services => scope.ServiceProvider;
 
         public static async Task<BackupFixture> CreateAsync(bool authenticate = false)
         {
