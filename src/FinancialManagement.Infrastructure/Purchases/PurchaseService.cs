@@ -15,6 +15,103 @@ internal sealed class PurchaseService(
     IBusinessReferenceGenerator referenceGenerator,
     TimeProvider timeProvider) : IPurchaseService
 {
+    public async Task<PurchaseListResult> GetPageAsync(
+        PurchaseListQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!currentUserSession.IsAuthenticated)
+        {
+            return PurchaseListResult.Failed(query, PurchaseListFailureReason.NotAuthenticated);
+        }
+
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Purchases,
+                PermissionAction.View,
+                cancellationToken))
+        {
+            return PurchaseListResult.Failed(query, PurchaseListFailureReason.Forbidden);
+        }
+
+        if (query.PageNumber < 1)
+        {
+            return PurchaseListResult.Failed(query, PurchaseListFailureReason.InvalidPageNumber);
+        }
+
+        if (query.PageSize is < 1 or > 200)
+        {
+            return PurchaseListResult.Failed(query, PurchaseListFailureReason.InvalidPageSize);
+        }
+
+        if (query.FromDate is DateOnly fromDate
+            && query.ToDate is DateOnly toDate
+            && fromDate > toDate)
+        {
+            return PurchaseListResult.Failed(query, PurchaseListFailureReason.InvalidDateRange);
+        }
+
+        var skip = ((long)query.PageNumber - 1) * query.PageSize;
+        if (skip > int.MaxValue)
+        {
+            return PurchaseListResult.Failed(query, PurchaseListFailureReason.InvalidPageNumber);
+        }
+
+        var purchases =
+            from purchase in dbContext.Purchases.AsNoTracking()
+            join supplier in dbContext.Suppliers.AsNoTracking()
+                on purchase.SupplierId equals supplier.Id
+            select new
+            {
+                purchase.Id,
+                purchase.Reference,
+                purchase.PurchaseDate,
+                purchase.TotalAmountMinor,
+                purchase.SupplierId,
+                SupplierName = supplier.Name,
+                purchase.DueDate,
+                purchase.Observation
+            };
+
+        if (query.FromDate is DateOnly inclusiveFromDate)
+        {
+            purchases = purchases.Where(purchase => purchase.PurchaseDate >= inclusiveFromDate);
+        }
+
+        if (query.ToDate is DateOnly inclusiveToDate)
+        {
+            purchases = purchases.Where(purchase => purchase.PurchaseDate <= inclusiveToDate);
+        }
+
+        var searchText = query.SearchText?.Trim();
+        if (!string.IsNullOrEmpty(searchText))
+        {
+            purchases = purchases.Where(purchase =>
+                purchase.Reference.Contains(searchText)
+                || purchase.SupplierName.Contains(searchText));
+        }
+
+        var totalCount = await purchases.CountAsync(cancellationToken);
+        var items = await purchases
+            .OrderByDescending(purchase => purchase.PurchaseDate)
+            .ThenByDescending(purchase => purchase.Id)
+            .Skip((int)skip)
+            .Take(query.PageSize)
+            .Select(purchase => new PurchaseListItem(
+                purchase.Id,
+                purchase.Reference,
+                purchase.PurchaseDate,
+                purchase.TotalAmountMinor,
+                purchase.SupplierId,
+                purchase.SupplierName,
+                purchase.DueDate,
+                purchase.Observation))
+            .ToListAsync(cancellationToken);
+
+        return PurchaseListResult.Succeeded(query, items, totalCount);
+    }
+
     public async Task<CreatePurchaseResult> CreateAsync(
         CreatePurchaseCommand command,
         CancellationToken cancellationToken = default)
