@@ -20,7 +20,6 @@ internal sealed class DatabaseBackupService(
     TimeProvider timeProvider,
     ILogger<DatabaseBackupService>? logger = null) : IDatabaseBackupService
 {
-    private const string CurrentSingletonIndex = "UX_TreasuryOpeningBalance_Singleton";
     private const string MigrationHistoryTable = "__EFMigrationsHistory";
 
     public Task<CreateDatabaseBackupResult> CreateLocalBackupAsync(
@@ -424,7 +423,7 @@ internal sealed class DatabaseBackupService(
         try
         {
             await using var connection = new SqliteConnection(
-                BuildConnectionString(databasePath, SqliteOpenMode.ReadWrite));
+                BuildConnectionString(databasePath, SqliteOpenMode.ReadOnly));
             await connection.OpenAsync(cancellationToken);
 
             if (!string.Equals(
@@ -445,7 +444,8 @@ internal sealed class DatabaseBackupService(
                 }
             }
 
-            if (!await SqliteObjectExistsAsync(connection, "table", MigrationHistoryTable, cancellationToken))
+            var schemaValidator = new DatabaseSchemaValidator(dbContext, logger);
+            if (!await schemaValidator.ValidateHistoryAsync(connection, cancellationToken))
             {
                 return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
             }
@@ -473,11 +473,9 @@ internal sealed class DatabaseBackupService(
                 return DatabaseValidation.Invalid(DatabaseBackupFailureReason.IncompatibleBackup);
             }
 
-            var singletonMigrationApplied = appliedMigrations.Any(
-                migration => migration.EndsWith("_003_TreasuryOpeningBalanceSingleton", StringComparison.Ordinal));
-            if (singletonMigrationApplied &&
-                !await SqliteObjectExistsAsync(connection, "index", CurrentSingletonIndex, cancellationToken))
+            if (!await schemaValidator.ValidateAsync(connection, appliedMigrations, cancellationToken))
             {
+                logger?.LogWarning("The database schema does not match migration {MigrationId}.", appliedMigrations[^1]);
                 return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
             }
 
@@ -584,20 +582,6 @@ internal sealed class DatabaseBackupService(
         await using var command = connection.CreateCommand();
         command.CommandText = commandText;
         return Convert.ToString(await command.ExecuteScalarAsync(cancellationToken));
-    }
-
-    private static async Task<bool> SqliteObjectExistsAsync(
-        SqliteConnection connection,
-        string type,
-        string name,
-        CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = $type AND name = $name);";
-        command.Parameters.AddWithValue("$type", type);
-        command.Parameters.AddWithValue("$name", name);
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 1;
     }
 
     private static void DeleteSidecarsBestEffort(string databasePath)

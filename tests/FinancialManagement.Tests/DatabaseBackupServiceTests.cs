@@ -17,7 +17,7 @@ using Xunit.Abstractions;
 
 namespace FinancialManagement.Tests;
 
-public sealed class DatabaseBackupServiceTests(ITestOutputHelper output)
+public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
 {
     private static readonly DateTimeOffset TestUtc = new(2026, 9, 4, 12, 30, 45, TimeSpan.Zero);
 
