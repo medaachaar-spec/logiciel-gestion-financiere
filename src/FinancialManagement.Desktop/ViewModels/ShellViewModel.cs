@@ -23,6 +23,8 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly Lazy<SalesViewModel> _sales;
     private readonly Lazy<PurchasesViewModel> _purchases;
     private readonly Lazy<ExpensesViewModel> _expenses;
+    private readonly Lazy<ClientsViewModel> _clients;
+    private readonly Lazy<SuppliersViewModel> _suppliers;
     private readonly Lazy<TreasuryViewModel> _treasury;
     private readonly CancellationTokenSource _navigationCancellation = new();
     private long _navigationRequestVersion;
@@ -38,6 +40,8 @@ public sealed class ShellViewModel : ViewModelBase
         Lazy<SalesViewModel> salesViewModel,
         Lazy<PurchasesViewModel> purchasesViewModel,
         Lazy<ExpensesViewModel> expensesViewModel,
+        Lazy<ClientsViewModel> clientsViewModel,
+        Lazy<SuppliersViewModel> suppliersViewModel,
         Lazy<TreasuryViewModel> treasuryViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
@@ -48,6 +52,8 @@ public sealed class ShellViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(salesViewModel);
         ArgumentNullException.ThrowIfNull(purchasesViewModel);
         ArgumentNullException.ThrowIfNull(expensesViewModel);
+        ArgumentNullException.ThrowIfNull(clientsViewModel);
+        ArgumentNullException.ThrowIfNull(suppliersViewModel);
         ArgumentNullException.ThrowIfNull(treasuryViewModel);
 
         _currentUserSession = currentUserSession;
@@ -58,6 +64,8 @@ public sealed class ShellViewModel : ViewModelBase
         _sales = salesViewModel;
         _purchases = purchasesViewModel;
         _expenses = expensesViewModel;
+        _clients = clientsViewModel;
+        _suppliers = suppliersViewModel;
         _treasury = treasuryViewModel;
         NavigationItems = new ReadOnlyObservableCollection<NavigationItemViewModel>(
             _navigationItems);
@@ -111,8 +119,20 @@ public sealed class ShellViewModel : ViewModelBase
             string.Empty,
             requiredModule: PermissionModule.Expenses,
             pageFactory: () => _expenses.Value);
-        AddNavigationItem("Clients", "\uE77B", "customers", "Le contenu métier des clients sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Clients);
-        AddNavigationItem("Fournisseurs", "\uE716", "suppliers", "Le contenu métier des fournisseurs sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Suppliers);
+        AddNavigationItem(
+            "Clients",
+            "\uE77B",
+            "customers",
+            string.Empty,
+            requiredModule: PermissionModule.Clients,
+            pageFactory: () => _clients.Value);
+        AddNavigationItem(
+            "Fournisseurs",
+            "\uE716",
+            "suppliers",
+            string.Empty,
+            requiredModule: PermissionModule.Suppliers,
+            pageFactory: () => _suppliers.Value);
         AddNavigationItem("Encaissements clients", "\uE8C7", "customer-payments", "Le contenu métier des encaissements clients sera intégré dans une prochaine étape.", requiredModule: PermissionModule.CustomerPayments);
         AddNavigationItem("Paiements fournisseurs", "\uE8C7", "supplier-payments", "Le contenu métier des paiements fournisseurs sera intégré dans une prochaine étape.", requiredModule: PermissionModule.SupplierPayments);
         AddNavigationItem(
@@ -376,6 +396,16 @@ public sealed class ShellViewModel : ViewModelBase
             _expenses.Value.Stop();
         }
 
+        if (_clients.IsValueCreated)
+        {
+            _clients.Value.Stop();
+        }
+
+        if (_suppliers.IsValueCreated)
+        {
+            _suppliers.Value.Stop();
+        }
+
         if (_treasury.IsValueCreated)
         {
             _treasury.Value.Stop();
@@ -400,10 +430,23 @@ public sealed class ShellViewModel : ViewModelBase
         var expensesStop = _expenses.IsValueCreated
             ? _expenses.Value.StopAsync()
             : Task.CompletedTask;
+        var clientsStop = _clients.IsValueCreated
+            ? _clients.Value.StopAsync()
+            : Task.CompletedTask;
+        var suppliersStop = _suppliers.IsValueCreated
+            ? _suppliers.Value.StopAsync()
+            : Task.CompletedTask;
         var treasuryStop = _treasury.IsValueCreated
             ? _treasury.Value.StopAsync()
             : Task.CompletedTask;
-        await Task.WhenAll(dashboardStop, salesStop, purchasesStop, expensesStop, treasuryStop);
+        await Task.WhenAll(
+            dashboardStop,
+            salesStop,
+            purchasesStop,
+            expensesStop,
+            clientsStop,
+            suppliersStop,
+            treasuryStop);
     }
 
     private void SetNoAuthorizedModulePage()
