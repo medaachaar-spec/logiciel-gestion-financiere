@@ -18,6 +18,9 @@ internal sealed class BusinessReferenceGenerator : IBusinessReferenceGenerator
     public string GenerateSupplierPaymentReference(DateOnly businessDate) =>
         Generate("DEC", businessDate);
 
+    public string GenerateExpenseReference(DateOnly businessDate) =>
+        Generate("DEP", businessDate);
+
     public string GenerateInitialCustomerReceivableReference(DateOnly historicalDate) =>
         Generate("CRE", historicalDate);
 

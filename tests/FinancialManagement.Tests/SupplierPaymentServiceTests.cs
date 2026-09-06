@@ -1183,6 +1183,9 @@ public sealed class SupplierPaymentServiceTests
             $"DEC-{businessDate:yyyyMMdd}-" +
             $"{Interlocked.Increment(ref _supplierPaymentSequence):X12}";
 
+        public string GenerateExpenseReference(DateOnly businessDate) =>
+            $"DEP-{businessDate:yyyyMMdd}-000000000001";
+
         public string GenerateInitialCustomerReceivableReference(DateOnly historicalDate) =>
             $"CRE-{historicalDate:yyyyMMdd}-000000000001";
 

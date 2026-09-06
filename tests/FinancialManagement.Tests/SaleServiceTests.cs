@@ -570,6 +570,9 @@ public sealed class SaleServiceTests
         public string GenerateSupplierPaymentReference(DateOnly businessDate) =>
             "DEC-20260204-ABCDEF123456";
 
+        public string GenerateExpenseReference(DateOnly businessDate) =>
+            "DEP-20260204-ABCDEF123456";
+
         public string GenerateInitialCustomerReceivableReference(DateOnly historicalDate) =>
             "CRE-20260101-ABCDEF123456";
 
