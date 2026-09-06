@@ -105,6 +105,9 @@ public partial class App : System.Windows.Application
         services.AddTransient<TreasuryViewModel>();
         services.AddTransient(provider => new Lazy<TreasuryViewModel>(
             () => provider.GetRequiredService<TreasuryViewModel>()));
+        services.AddTransient<SalesViewModel>();
+        services.AddTransient(provider => new Lazy<SalesViewModel>(
+            () => provider.GetRequiredService<SalesViewModel>()));
         services.AddTransient<ShellViewModel>();
         services.AddTransient<MainWindow>();
 
