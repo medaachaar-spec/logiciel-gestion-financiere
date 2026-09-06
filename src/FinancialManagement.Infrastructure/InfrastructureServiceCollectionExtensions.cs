@@ -1,6 +1,7 @@
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
 using FinancialManagement.Application.Backup;
+using FinancialManagement.Application.Clients;
 using FinancialManagement.Application.CustomerAdvances;
 using FinancialManagement.Application.CustomerPayments;
 using FinancialManagement.Application.Dashboard;
@@ -15,6 +16,7 @@ using FinancialManagement.Application.InitialSupplierPayables;
 using FinancialManagement.Infrastructure.Authentication;
 using FinancialManagement.Infrastructure.Authorization;
 using FinancialManagement.Infrastructure.Backup;
+using FinancialManagement.Infrastructure.Clients;
 using FinancialManagement.Infrastructure.CustomerAdvances;
 using FinancialManagement.Infrastructure.CustomerPayments;
 using FinancialManagement.Infrastructure.Dashboard;
@@ -55,6 +57,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IBusinessReferenceGenerator, BusinessReferenceGenerator>();
         services.AddScoped<ISaleService, SaleService>();
+        services.AddScoped<IClientLookupService, ClientLookupService>();
         services.AddScoped<IPurchaseService, PurchaseService>();
         services.AddScoped<ICustomerPaymentService, CustomerPaymentService>();
         services.AddScoped<ISupplierPaymentService, SupplierPaymentService>();
