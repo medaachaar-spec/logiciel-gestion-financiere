@@ -1,0 +1,416 @@
+<UserControl x:Class="FinancialManagement.Desktop.Views.ExpensesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Language="fr-FR"
+             Loaded="ExpensesView_OnLoaded">
+    <UserControl.Resources>
+        <Style x:Key="ExpensesDataGridStyle" TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="RowHeight" Value="42" />
+            <Setter Property="ColumnHeaderHeight" Value="38" />
+            <Setter Property="AlternatingRowBackground" Value="{StaticResource BackgroundBrush}" />
+        </Style>
+        <Style x:Key="ExpensesDataGridCellTextStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="8,0" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Text}" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid IsEnabled="{Binding IsCreateFormVisible, Converter={StaticResource InverseBooleanConverter}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Dépenses" Style="{StaticResource PageTitleTextStyle}" />
+                    <TextBlock Text="Consultez et enregistrez les dépenses de l'activité."
+                               Style="{StaticResource BodyTextStyle}"
+                               Margin="0,4,12,0" />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Width="156"
+                        Height="36"
+                        Content="Nouvelle dépense"
+                        Command="{Binding ShowCreateFormCommand}"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        AutomationProperties.Name="Créer une nouvelle dépense"
+                        Visibility="{Binding CanCreateExpenses, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </Grid>
+
+            <Border Grid.Row="1"
+                    Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="14"
+                    Margin="0,0,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="150" />
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="98" />
+                        <ColumnDefinition Width="104" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <Label Content="Recherche"
+                               Target="{Binding ElementName=ExpensesSearchInput}"
+                               Style="{StaticResource FieldLabelStyle}" />
+                        <TextBox x:Name="ExpensesSearchInput"
+                                 Height="36"
+                                 TabIndex="0"
+                                 Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource InputTextBoxStyle}"
+                                 AutomationProperties.Name="Rechercher par référence, catégorie ou employé" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                        <Label Content="Date début"
+                               Target="{Binding ElementName=ExpensesFromDateInput}"
+                               Style="{StaticResource FieldLabelStyle}" />
+                        <DatePicker x:Name="ExpensesFromDateInput"
+                                    TabIndex="1"
+                                    SelectedDate="{Binding FromDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    SelectedDateFormat="Short"
+                                    Style="{StaticResource InputDatePickerStyle}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="0,0,12,0">
+                        <Label Content="Date fin"
+                               Target="{Binding ElementName=ExpensesToDateInput}"
+                               Style="{StaticResource FieldLabelStyle}" />
+                        <DatePicker x:Name="ExpensesToDateInput"
+                                    TabIndex="2"
+                                    SelectedDate="{Binding ToDate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    SelectedDateFormat="Short"
+                                    Style="{StaticResource InputDatePickerStyle}" />
+                    </StackPanel>
+                    <Button Grid.Column="3"
+                            Height="36"
+                            Margin="0,25,10,0"
+                            TabIndex="3"
+                            Content="Appliquer"
+                            Command="{Binding ApplyFiltersCommand}"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            AutomationProperties.Name="Appliquer les filtres de dépenses" />
+                    <Button Grid.Column="4"
+                            Height="36"
+                            Margin="0,25,0,0"
+                            TabIndex="4"
+                            Content="Réinitialiser"
+                            Command="{Binding ResetFiltersCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            AutomationProperties.Name="Réinitialiser les filtres de dépenses" />
+                </Grid>
+            </Border>
+
+            <StackPanel Grid.Row="2">
+                <StackPanel Margin="0,0,0,10"
+                            Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="Chargement des dépenses…" Margin="0,0,0,6" />
+                    <ProgressBar Height="4" IsIndeterminate="True" />
+                </StackPanel>
+                <Border Background="{StaticResource SuccessSoftBrush}"
+                        CornerRadius="8"
+                        Padding="10"
+                        Margin="0,0,0,10"
+                        Visibility="{Binding HasSuccessMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{Binding SuccessMessage}"
+                               Foreground="{StaticResource SuccessBrush}"
+                               TextWrapping="Wrap" />
+                </Border>
+                <TextBlock Text="{Binding ListErrorMessage}"
+                           Foreground="{StaticResource DangerBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,10"
+                           Visibility="{Binding HasListError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </StackPanel>
+
+            <Grid Grid.Row="3">
+                <DataGrid ItemsSource="{Binding Expenses}"
+                          Style="{StaticResource ExpensesDataGridStyle}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="False"
+                          CanUserResizeRows="False"
+                          CanUserSortColumns="False"
+                          SelectionMode="Single"
+                          SelectionUnit="FullRow"
+                          ClipboardCopyMode="None"
+                          EnableRowVirtualization="True"
+                          ScrollViewer.CanContentScroll="True"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          AutomationProperties.Name="Liste des dépenses"
+                          Visibility="{Binding HasExpenses, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Date" Binding="{Binding ExpenseDateDisplay}" Width="88"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                        <DataGridTextColumn Header="Référence" Binding="{Binding Reference}" Width="1.05*"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                        <DataGridTextColumn Header="Catégorie" Binding="{Binding ExpenseCategoryName}" Width="1.15*"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                        <DataGridTextColumn Header="Montant" Binding="{Binding AmountDisplay}" Width="105"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                        <DataGridTextColumn Header="Paiement" Binding="{Binding PaymentMethodDisplay}" Width="130"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                        <DataGridTextColumn Header="Employé" Binding="{Binding ConcernedEmployeeDisplay}" Width="1.1*"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                        <DataGridTextColumn Header="Observation" Binding="{Binding ObservationDisplay}" Width="1.2*"
+                                            ElementStyle="{StaticResource ExpensesDataGridCellTextStyle}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+                <Border Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="24"
+                        Visibility="{Binding ShowEmptyState, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="{Binding EmptyStateMessage}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="14" />
+                </Border>
+            </Grid>
+
+            <Grid Grid.Row="4" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding TotalCountDescription}"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}" />
+                <Button Grid.Column="1" Width="104" Height="34"
+                        Content="Précédent"
+                        Command="{Binding PreviousPageCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        AutomationProperties.Name="Page précédente" />
+                <TextBlock Grid.Column="2" Width="110"
+                           Text="{Binding PageDescription}"
+                           TextAlignment="Center"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="3" Width="104" Height="34"
+                        Content="Suivant"
+                        Command="{Binding NextPageCommand}"
+                        Style="{StaticResource SecondaryButtonStyle}"
+                        AutomationProperties.Name="Page suivante" />
+            </Grid>
+        </Grid>
+
+        <Grid Background="#66000000"
+              Visibility="{Binding IsCreateFormVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Border Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Margin="24"
+                    MaxWidth="780"
+                    MaxHeight="560"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Stretch">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="22">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Nouvelle dépense" FontSize="22" FontWeight="SemiBold" />
+                                <TextBlock Text="La date et la référence seront générées automatiquement."
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Width="90" Height="34"
+                                    Content="Annuler"
+                                    Command="{Binding CancelCreateFormCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    AutomationProperties.Name="Annuler la nouvelle dépense" />
+                        </Grid>
+
+                        <TextBlock Text="{Binding FormErrorMessage}"
+                                   Foreground="{StaticResource DangerBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12"
+                                   Visibility="{Binding HasFormError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                        <StackPanel>
+                            <Label Content="Catégorie *"
+                                   Target="{Binding ElementName=ExpenseCategoryInput}"
+                                   Style="{StaticResource FieldLabelStyle}" />
+                            <ComboBox x:Name="ExpenseCategoryInput"
+                                      TabIndex="10"
+                                      ItemsSource="{Binding Categories}"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                                      Style="{StaticResource InputComboBoxStyle}"
+                                      AutomationProperties.Name="Catégorie de la dépense" />
+                            <StackPanel Margin="0,8,0,0"
+                                        Visibility="{Binding IsLoadingCategories, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <TextBlock Text="Chargement des catégories…" Margin="0,0,0,6" />
+                                <ProgressBar Height="4" IsIndeterminate="True" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding CategoryErrorMessage}"
+                                       Foreground="{StaticResource DangerBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0"
+                                       Visibility="{Binding HasCategoryError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        </StackPanel>
+
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="18" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <Label Content="Montant *"
+                                       Target="{Binding ElementName=ExpenseAmountInput}"
+                                       Style="{StaticResource FieldLabelStyle}" />
+                                <TextBox x:Name="ExpenseAmountInput" Height="36" TabIndex="11"
+                                         Text="{Binding Amount, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource InputTextBoxStyle}"
+                                         AutomationProperties.Name="Montant de la dépense" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <Label Content="Moyen de paiement *"
+                                       Target="{Binding ElementName=ExpensePaymentMethodInput}"
+                                       Style="{StaticResource FieldLabelStyle}" />
+                                <ComboBox x:Name="ExpensePaymentMethodInput" TabIndex="12"
+                                          ItemsSource="{Binding PaymentMethods}"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectedItem="{Binding SelectedPaymentMethod, Mode=TwoWay}"
+                                          Style="{StaticResource InputComboBoxStyle}"
+                                          AutomationProperties.Name="Moyen de paiement de la dépense" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Background="{StaticResource BackgroundBrush}"
+                                BorderBrush="{StaticResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="14"
+                                Margin="0,16,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Employé concerné (facultatif)"
+                                                   Style="{StaticResource FieldLabelTextStyle}" />
+                                        <TextBlock Text="{Binding EmployeeSelectionDescription}"
+                                                   Margin="0,4,0,0"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding EmployeeSelectionDescription}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Width="90" Height="32"
+                                            Content="Retirer"
+                                            Command="{Binding RemoveEmployeeCommand}"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Visibility="{Binding HasSelectedEmployee, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                </Grid>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="112" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,10,0">
+                                        <Label Content="Rechercher un employé"
+                                               Target="{Binding ElementName=EmployeeSearchInput}"
+                                               Style="{StaticResource FieldLabelStyle}" />
+                                        <TextBox x:Name="EmployeeSearchInput" Height="36" TabIndex="13"
+                                                 Text="{Binding EmployeeSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 Style="{StaticResource InputTextBoxStyle}"
+                                                 AutomationProperties.Name="Rechercher un employé par nom ou identifiant" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Height="36" Margin="0,25,0,0" TabIndex="14"
+                                            Content="Rechercher"
+                                            Command="{Binding SearchEmployeesCommand}"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            AutomationProperties.Name="Lancer la recherche des employés" />
+                                </Grid>
+                                <TextBlock Text="Recherche en cours…" Margin="0,8,0,0"
+                                           Visibility="{Binding IsSearchingEmployees, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <TextBlock Text="{Binding EmployeeErrorMessage}"
+                                           Foreground="{StaticResource DangerBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,8,0,0"
+                                           Visibility="{Binding HasEmployeeError, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                <ListBox ItemsSource="{Binding EmployeeResults}"
+                                         SelectedItem="{Binding SelectedEmployeeResult, Mode=TwoWay}"
+                                         DisplayMemberPath="DisplayLabel"
+                                         MaxHeight="84"
+                                         Margin="0,8,0,0"
+                                         TabIndex="15"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         AutomationProperties.Name="Résultats de recherche des employés" />
+                                <Button Width="160" Height="32" Margin="0,8,0,0"
+                                        HorizontalAlignment="Left" TabIndex="16"
+                                        Content="Choisir cet employé"
+                                        Command="{Binding SelectEmployeeCommand}"
+                                        Style="{StaticResource SecondaryButtonStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Margin="0,14,0,0">
+                            <Label Content="Observation (facultative)"
+                                   Target="{Binding ElementName=ExpenseObservationInput}"
+                                   Style="{StaticResource FieldLabelStyle}" />
+                            <TextBox x:Name="ExpenseObservationInput" Height="46" TabIndex="17"
+                                     Padding="12,7" AcceptsReturn="True" TextWrapping="Wrap"
+                                     VerticalContentAlignment="Top"
+                                     Text="{Binding Observation, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource InputTextBoxStyle}"
+                                     AutomationProperties.Name="Observation de la dépense" />
+                        </StackPanel>
+
+                        <StackPanel Margin="0,12,0,0"
+                                    Visibility="{Binding IsSaving, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="Enregistrement de la dépense…" Margin="0,0,0,6" />
+                            <ProgressBar Height="4" IsIndeterminate="True" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                            <Button Width="96" Height="36" Margin="0,0,10,0" TabIndex="19"
+                                    Content="Annuler"
+                                    Command="{Binding CancelCreateFormCommand}"
+                                    Style="{StaticResource SecondaryButtonStyle}" />
+                            <Button Width="150" Height="36" TabIndex="18"
+                                    Content="Enregistrer"
+                                    Command="{Binding CreateExpenseCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    AutomationProperties.Name="Enregistrer la dépense" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
