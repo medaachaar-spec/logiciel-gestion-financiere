@@ -21,6 +21,7 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly ObservableCollection<NavigationItemViewModel> _navigationItems = [];
     private readonly Lazy<DashboardViewModel> _dashboard;
     private readonly Lazy<SalesViewModel> _sales;
+    private readonly Lazy<PurchasesViewModel> _purchases;
     private readonly Lazy<TreasuryViewModel> _treasury;
     private readonly CancellationTokenSource _navigationCancellation = new();
     private long _navigationRequestVersion;
@@ -34,6 +35,7 @@ public sealed class ShellViewModel : ViewModelBase
         DashboardOperationCoordinator operationCoordinator,
         Lazy<DashboardViewModel> dashboardViewModel,
         Lazy<SalesViewModel> salesViewModel,
+        Lazy<PurchasesViewModel> purchasesViewModel,
         Lazy<TreasuryViewModel> treasuryViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
@@ -42,6 +44,7 @@ public sealed class ShellViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(operationCoordinator);
         ArgumentNullException.ThrowIfNull(dashboardViewModel);
         ArgumentNullException.ThrowIfNull(salesViewModel);
+        ArgumentNullException.ThrowIfNull(purchasesViewModel);
         ArgumentNullException.ThrowIfNull(treasuryViewModel);
 
         _currentUserSession = currentUserSession;
@@ -50,6 +53,7 @@ public sealed class ShellViewModel : ViewModelBase
         _operationCoordinator = operationCoordinator;
         _dashboard = dashboardViewModel;
         _sales = salesViewModel;
+        _purchases = purchasesViewModel;
         _treasury = treasuryViewModel;
         NavigationItems = new ReadOnlyObservableCollection<NavigationItemViewModel>(
             _navigationItems);
@@ -89,7 +93,13 @@ public sealed class ShellViewModel : ViewModelBase
             string.Empty,
             requiredModule: PermissionModule.Sales,
             pageFactory: () => _sales.Value);
-        AddNavigationItem("Achats", "\uE7BF", "purchases", "Le contenu métier des achats sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Purchases);
+        AddNavigationItem(
+            "Achats",
+            "\uE7BF",
+            "purchases",
+            string.Empty,
+            requiredModule: PermissionModule.Purchases,
+            pageFactory: () => _purchases.Value);
         AddNavigationItem("Dépenses", "\uE7C1", "expenses", "Le contenu métier des dépenses sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Expenses);
         AddNavigationItem("Clients", "\uE77B", "customers", "Le contenu métier des clients sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Clients);
         AddNavigationItem("Fournisseurs", "\uE716", "suppliers", "Le contenu métier des fournisseurs sera intégré dans une prochaine étape.", requiredModule: PermissionModule.Suppliers);
@@ -346,6 +356,11 @@ public sealed class ShellViewModel : ViewModelBase
             _sales.Value.Stop();
         }
 
+        if (_purchases.IsValueCreated)
+        {
+            _purchases.Value.Stop();
+        }
+
         if (_treasury.IsValueCreated)
         {
             _treasury.Value.Stop();
@@ -364,10 +379,13 @@ public sealed class ShellViewModel : ViewModelBase
         var salesStop = _sales.IsValueCreated
             ? _sales.Value.StopAsync()
             : Task.CompletedTask;
+        var purchasesStop = _purchases.IsValueCreated
+            ? _purchases.Value.StopAsync()
+            : Task.CompletedTask;
         var treasuryStop = _treasury.IsValueCreated
             ? _treasury.Value.StopAsync()
             : Task.CompletedTask;
-        await Task.WhenAll(dashboardStop, salesStop, treasuryStop);
+        await Task.WhenAll(dashboardStop, salesStop, purchasesStop, treasuryStop);
     }
 
     private void SetNoAuthorizedModulePage()
