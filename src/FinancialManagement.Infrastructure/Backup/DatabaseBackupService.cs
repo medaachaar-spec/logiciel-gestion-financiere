@@ -58,7 +58,8 @@ internal sealed class DatabaseBackupService(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var authorizationFailure = GetAuthorizationFailure();
+        var initiatingUserId = currentUserSession.UserId;
+        var authorizationFailure = ValidateRestoreAuthorization(initiatingUserId, cancellationToken);
         if (authorizationFailure is not DatabaseBackupFailureReason.None)
         {
             return RestoreDatabaseBackupResult.Failed(authorizationFailure);
@@ -96,7 +97,10 @@ internal sealed class DatabaseBackupService(
 
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            authorizationFailure = ValidateRestoreAuthorization(initiatingUserId, cancellationToken);
+            if (authorizationFailure != DatabaseBackupFailureReason.None)
+                return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath);
+
             stagingPath = CreateUnusedPath(Path.GetDirectoryName(livePath)!, "RestoreStaging");
             var artifactFailure = await DatabaseBackupArtifact.ExtractAsync(sourcePath, stagingPath, cancellationToken);
             if (artifactFailure != DatabaseBackupFailureReason.None)
@@ -148,7 +152,11 @@ internal sealed class DatabaseBackupService(
 
             await CheckpointAndCloseAsync(stagingPath, cancellationToken);
             DeleteSidecarsBestEffort(stagingPath);
-            cancellationToken.ThrowIfCancellationRequested();
+            // Staging validation/migration may have outlived the initiating session.
+            authorizationFailure = ValidateRestoreAuthorization(initiatingUserId, cancellationToken);
+            if (authorizationFailure != DatabaseBackupFailureReason.None)
+                return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath);
+
             Directory.CreateDirectory(options.LocalBackupDirectory);
             try
             {
@@ -168,6 +176,11 @@ internal sealed class DatabaseBackupService(
                 return RestoreDatabaseBackupResult.Failed(DatabaseBackupFailureReason.StorageFailure, sourcePath);
             }
 
+            // PreRestore also awaits I/O. Recheck before touching live WAL/handles.
+            authorizationFailure = ValidateRestoreAuthorization(initiatingUserId, cancellationToken);
+            if (authorizationFailure != DatabaseBackupFailureReason.None)
+                return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath, preRestorePath);
+
             await CheckpointAndCloseAsync(livePath, cancellationToken);
             await dbContext.Database.CloseConnectionAsync();
             SqliteConnection.ClearAllPools();
@@ -180,6 +193,11 @@ internal sealed class DatabaseBackupService(
             rollbackPath = CreateUnusedPath(Path.GetDirectoryName(livePath)!, "RestoreRollback");
             try
             {
+                // Final commit gate: no await between authorization and replacement.
+                authorizationFailure = ValidateRestoreAuthorization(initiatingUserId, cancellationToken);
+                if (authorizationFailure != DatabaseBackupFailureReason.None)
+                    return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath, preRestorePath);
+
                 File.Replace(stagingPath, livePath, rollbackPath, ignoreMetadataErrors: true);
                 stagingPath = null;
                 swapCompleted = true;
@@ -378,6 +396,37 @@ internal sealed class DatabaseBackupService(
             DeleteDatabaseFilesBestEffort(databasePath);
             try { Directory.Delete(workspace); }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    private DatabaseBackupFailureReason ValidateRestoreAuthorization(long? initiatingUserId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            if (currentUserSession.UserId is not long currentUserId)
+                return DatabaseBackupFailureReason.NotAuthenticated;
+            if (currentUserId != initiatingUserId)
+                return DatabaseBackupFailureReason.Forbidden;
+
+            // This capability API is synchronous and reads the session only.
+            // Check cancellation and identity again in case either changed during it.
+            var failure = GetAuthorizationFailure();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (currentUserSession.UserId is null)
+                return DatabaseBackupFailureReason.NotAuthenticated;
+            if (currentUserSession.UserId != initiatingUserId)
+                return DatabaseBackupFailureReason.Forbidden;
+            return failure;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger?.LogWarning(exception, "Restore authorization could not be validated.");
+            return DatabaseBackupFailureReason.Forbidden;
         }
     }
 
