@@ -14,6 +14,104 @@ internal sealed class SaleService(
     IBusinessReferenceGenerator referenceGenerator,
     TimeProvider timeProvider) : ISaleService
 {
+    public async Task<SaleListResult> GetPageAsync(
+        SaleListQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!currentUserSession.IsAuthenticated)
+        {
+            return SaleListResult.Failed(query, SaleListFailureReason.NotAuthenticated);
+        }
+
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Sales,
+                PermissionAction.View,
+                cancellationToken))
+        {
+            return SaleListResult.Failed(query, SaleListFailureReason.Forbidden);
+        }
+
+        if (query.PageNumber < 1)
+        {
+            return SaleListResult.Failed(query, SaleListFailureReason.InvalidPageNumber);
+        }
+
+        if (query.PageSize is < 1 or > 200)
+        {
+            return SaleListResult.Failed(query, SaleListFailureReason.InvalidPageSize);
+        }
+
+        if (query.FromDate is DateOnly fromDate
+            && query.ToDate is DateOnly toDate
+            && fromDate > toDate)
+        {
+            return SaleListResult.Failed(query, SaleListFailureReason.InvalidDateRange);
+        }
+
+        var skip = ((long)query.PageNumber - 1) * query.PageSize;
+        if (skip > int.MaxValue)
+        {
+            return SaleListResult.Failed(query, SaleListFailureReason.InvalidPageNumber);
+        }
+
+        var sales =
+            from sale in dbContext.Sales.AsNoTracking()
+            join client in dbContext.Clients.AsNoTracking()
+                on sale.ClientId equals client.Id into clients
+            from client in clients.DefaultIfEmpty()
+            select new
+            {
+                sale.Id,
+                sale.Reference,
+                sale.SaleDate,
+                sale.TotalAmountMinor,
+                sale.ClientId,
+                ClientName = client == null ? null : client.Name,
+                sale.DueDate,
+                sale.Observation
+            };
+
+        if (query.FromDate is DateOnly inclusiveFromDate)
+        {
+            sales = sales.Where(sale => sale.SaleDate >= inclusiveFromDate);
+        }
+
+        if (query.ToDate is DateOnly inclusiveToDate)
+        {
+            sales = sales.Where(sale => sale.SaleDate <= inclusiveToDate);
+        }
+
+        var searchText = query.SearchText?.Trim();
+        if (!string.IsNullOrEmpty(searchText))
+        {
+            sales = sales.Where(sale =>
+                sale.Reference.Contains(searchText)
+                || (sale.ClientName != null && sale.ClientName.Contains(searchText)));
+        }
+
+        var totalCount = await sales.CountAsync(cancellationToken);
+        var items = await sales
+            .OrderByDescending(sale => sale.SaleDate)
+            .ThenByDescending(sale => sale.Id)
+            .Skip((int)skip)
+            .Take(query.PageSize)
+            .Select(sale => new SaleListItem(
+                sale.Id,
+                sale.Reference,
+                sale.SaleDate,
+                sale.TotalAmountMinor,
+                sale.ClientId,
+                sale.ClientName,
+                sale.DueDate,
+                sale.Observation))
+            .ToListAsync(cancellationToken);
+
+        return SaleListResult.Succeeded(query, items, totalCount);
+    }
+
     public async Task<CreateSaleResult> CreateAsync(
         CreateSaleCommand command,
         CancellationToken cancellationToken = default)
