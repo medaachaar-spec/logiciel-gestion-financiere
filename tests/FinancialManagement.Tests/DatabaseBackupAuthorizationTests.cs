@@ -4,6 +4,7 @@ using FinancialManagement.Application.Authorization;
 using FinancialManagement.Domain.Enums;
 using FinancialManagement.Infrastructure;
 using FinancialManagement.Infrastructure.Authentication;
+using FinancialManagement.Infrastructure.Authorization;
 using FinancialManagement.Infrastructure.Backup;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,6 +12,242 @@ namespace FinancialManagement.Tests;
 
 public sealed partial class DatabaseBackupServiceTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Backup_RejectsSessionChangeWhileWaitingForMaintenanceLock(bool anotherResponsible)
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        var session = (CurrentUserSession)fixture.Session;
+
+        await fixture.MaintenanceLock.Semaphore.WaitAsync();
+        Task<CreateDatabaseBackupResult> pending;
+        try
+        {
+            pending = fixture.Service.CreateLocalBackupAsync();
+            Assert.False(pending.IsCompleted); // The held semaphore is the first incomplete await.
+            var otherId = session.UserId!.Value + 1;
+            session.Clear();
+            if (anotherResponsible)
+                session.SetUser(new AuthenticatedUser(otherId, "Other responsible", "other", UserRole.Responsable));
+        }
+        finally
+        {
+            fixture.MaintenanceLock.Semaphore.Release();
+        }
+
+        var result = await pending.WaitAsync(TimeSpan.FromSeconds(30));
+        var publishedArtifacts = Directory.Exists(fixture.BackupDirectory)
+            ? Directory.GetFiles(fixture.BackupDirectory, "*.fmbak").Length
+            : 0;
+        output.WriteLine(
+            $"anotherResponsible={anotherResponsible}; Success={result.Success}; " +
+            $"BackupPath={result.BackupPath}; PublishedArtifacts={publishedArtifacts}");
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            anotherResponsible ? DatabaseBackupFailureReason.Forbidden : DatabaseBackupFailureReason.NotAuthenticated,
+            result.FailureReason);
+        Assert.Null(result.BackupPath);
+        Assert.Equal(0, publishedArtifacts);
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Backup_SameAuthorizedUserAfterLockWaitSucceedsAndArtifactIsRestorable()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+
+        await fixture.MaintenanceLock.Semaphore.WaitAsync();
+        Task<CreateDatabaseBackupResult> pending;
+        try
+        {
+            pending = fixture.Service.CreateLocalBackupAsync();
+            Assert.False(pending.IsCompleted);
+        }
+        finally
+        {
+            fixture.MaintenanceLock.Semaphore.Release();
+        }
+
+        var backup = await pending.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(backup.Success);
+        Assert.True(File.Exists(backup.BackupPath));
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+
+        var restore = await fixture.Service.RestoreAsync(new(backup.BackupPath!)).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(restore.Success);
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+    }
+
+    [Theory]
+    [InlineData("deny")]
+    [InlineData("exception")]
+    [InlineData("cancel")]
+    [InlineData("authorization-canceled")]
+    [InlineData("clear")]
+    [InlineData("switch-responsable")]
+    [InlineData("switch-employee")]
+    public async Task Backup_PostLockAuthorizationFailureDoesNotPublishAndReleasesLock(string fault)
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        using var cancellation = new CancellationTokenSource();
+        var probe = new MaintenanceAuthorizationProbe(fixture.Services.GetRequiredService<IAuthorizationService>(), call =>
+            call == 2 ? ChangeAuthorization(fixture, fault, cancellation) : null);
+        var service = WithAuthorization(fixture, probe);
+
+        await fixture.MaintenanceLock.Semaphore.WaitAsync();
+        Task<CreateDatabaseBackupResult> pending;
+        try
+        {
+            pending = service.CreateLocalBackupAsync(cancellation.Token);
+            Assert.False(pending.IsCompleted);
+            Assert.Equal(1, probe.Calls);
+        }
+        finally
+        {
+            fixture.MaintenanceLock.Semaphore.Release();
+        }
+
+        if (fault is "cancel" or "authorization-canceled")
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => pending.WaitAsync(TimeSpan.FromSeconds(30)));
+        }
+        else
+        {
+            var result = await pending.WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.False(result.Success);
+            Assert.Equal(
+                fault == "clear" ? DatabaseBackupFailureReason.NotAuthenticated : DatabaseBackupFailureReason.Forbidden,
+                result.FailureReason);
+            Assert.Null(result.BackupPath);
+        }
+
+        Assert.Equal(2, probe.Calls);
+        AssertNoPublishedOrTemporaryBackupArtifacts(fixture);
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+
+        await fixture.AuthenticateAsync("responsable", "Password-123!");
+        var next = await fixture.Service.CreateLocalBackupAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(next.Success);
+        Assert.True(File.Exists(next.BackupPath));
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Backup_CancellationWhileWaitingDoesNotReleaseAnotherOwnersLock()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        using var cancellation = new CancellationTokenSource();
+
+        await fixture.MaintenanceLock.Semaphore.WaitAsync();
+        try
+        {
+            var pending = fixture.Service.CreateLocalBackupAsync(cancellation.Token);
+            Assert.False(pending.IsCompleted);
+            cancellation.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => pending.WaitAsync(TimeSpan.FromSeconds(30)));
+            Assert.Equal(0, fixture.MaintenanceLock.Semaphore.CurrentCount);
+            AssertNoPublishedOrTemporaryBackupArtifacts(fixture);
+        }
+        finally
+        {
+            fixture.MaintenanceLock.Semaphore.Release();
+        }
+
+        var next = await fixture.Service.CreateLocalBackupAsync().WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(next.Success);
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+    }
+
+    [Theory]
+    [InlineData("deny")]
+    [InlineData("exception")]
+    [InlineData("cancel")]
+    [InlineData("authorization-canceled")]
+    [InlineData("clear")]
+    [InlineData("switch-responsable")]
+    [InlineData("switch-employee")]
+    public async Task Backup_FinalAuthorizationFailureCleansTemporaryArtifactsAndDoesNotPublish(string fault)
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        using var cancellation = new CancellationTokenSource();
+        var partialObservedAtGate = false;
+        var workspaceObservedAtGate = false;
+        var probe = new MaintenanceAuthorizationProbe(fixture.Services.GetRequiredService<IAuthorizationService>(), call =>
+        {
+            if (call != 3)
+                return null;
+
+            partialObservedAtGate = Directory.GetFiles(fixture.BackupDirectory, ".fmbackup-*.partial").Length == 1;
+            workspaceObservedAtGate = Directory.GetDirectories(fixture.BackupDirectory, ".fmbackup-*.tmp").Length == 1;
+            return ChangeAuthorization(fixture, fault, cancellation);
+        });
+
+        var pending = WithAuthorization(fixture, probe).CreateLocalBackupAsync(cancellation.Token);
+        if (fault is "cancel" or "authorization-canceled")
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => pending.WaitAsync(TimeSpan.FromSeconds(30)));
+        }
+        else
+        {
+            var result = await pending.WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.False(result.Success);
+            Assert.Equal(
+                fault == "clear" ? DatabaseBackupFailureReason.NotAuthenticated : DatabaseBackupFailureReason.Forbidden,
+                result.FailureReason);
+            Assert.Null(result.BackupPath);
+        }
+
+        Assert.Equal(3, probe.Calls);
+        Assert.True(partialObservedAtGate);
+        Assert.True(workspaceObservedAtGate);
+        AssertNoPublishedOrTemporaryBackupArtifacts(fixture);
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+    }
+
+    [Fact]
+    public async Task Backup_QueuedBehindAnotherBackupRejectsInvalidatedInitiatingSession()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        var secondSession = new CurrentUserSession();
+        secondSession.SetUser(new AuthenticatedUser(42, "Second responsible", "second", UserRole.Responsable));
+        var secondAuthorization = new AuthorizationService(fixture.Context, secondSession);
+        var secondService = WithSession(fixture, secondSession, secondAuthorization);
+        Task<CreateDatabaseBackupResult>? queued = null;
+        var queuedWasWaiting = false;
+        var firstProbe = new MaintenanceAuthorizationProbe(
+            fixture.Services.GetRequiredService<IAuthorizationService>(),
+            call =>
+            {
+                if (call != 3)
+                    return null;
+
+                queued = secondService.CreateLocalBackupAsync();
+                queuedWasWaiting = !queued.IsCompleted;
+                secondSession.Clear();
+                return null;
+            });
+
+        var first = await WithAuthorization(fixture, firstProbe)
+            .CreateLocalBackupAsync()
+            .WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(first.Success);
+        Assert.True(queuedWasWaiting);
+        Assert.NotNull(queued);
+
+        var second = await queued.WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.False(second.Success);
+        Assert.Equal(DatabaseBackupFailureReason.NotAuthenticated, second.FailureReason);
+        Assert.Null(second.BackupPath);
+        Assert.Single(Directory.GetFiles(fixture.BackupDirectory, "*.fmbak"));
+        AssertNoTemporaryBackupArtifacts(fixture);
+        Assert.Equal(1, fixture.MaintenanceLock.Semaphore.CurrentCount);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -92,7 +329,7 @@ public sealed partial class DatabaseBackupServiceTests
         var swap = false;
         fixture.RestoreTestHook.AfterAtomicReplace = _ => swap = true;
         using var cancellation = new CancellationTokenSource();
-        var probe = new RestoreAuthorizationProbe(fixture.Services.GetRequiredService<IAuthorizationService>(), call =>
+        var probe = new MaintenanceAuthorizationProbe(fixture.Services.GetRequiredService<IAuthorizationService>(), call =>
             call == 2 ? ChangeAuthorization(fixture, fault, cancellation) : null);
         var service = WithAuthorization(fixture, probe);
 
@@ -194,7 +431,7 @@ public sealed partial class DatabaseBackupServiceTests
         using var cancellation = new CancellationTokenSource();
         var stagingObservedAtGate = false;
         int? safetyCountAtGate = null;
-        var probe = new RestoreAuthorizationProbe(fixture.Services.GetRequiredService<IAuthorizationService>(), call =>
+        var probe = new MaintenanceAuthorizationProbe(fixture.Services.GetRequiredService<IAuthorizationService>(), call =>
         {
             if (call != gate) return null;
             stagingObservedAtGate = Directory.GetFiles(fixture.Root, "FinancialManagement_RestoreStaging*").Length > 0;
@@ -274,11 +511,32 @@ public sealed partial class DatabaseBackupServiceTests
     }
 
     private static IDatabaseBackupService WithAuthorization(BackupFixture fixture, IAuthorizationService authorization) =>
-        new DatabaseBackupService(fixture.Context, (CurrentUserSession)fixture.Session, authorization,
+        WithSession(fixture, (CurrentUserSession)fixture.Session, authorization);
+
+    private static IDatabaseBackupService WithSession(
+        BackupFixture fixture,
+        CurrentUserSession session,
+        IAuthorizationService authorization) =>
+        new DatabaseBackupService(fixture.Context, session, authorization,
             fixture.Services.GetRequiredService<DatabaseBackupOptions>(), fixture.MaintenanceLock,
             fixture.RestoreTestHook, fixture.Services.GetRequiredService<TimeProvider>());
 
-    private sealed class RestoreAuthorizationProbe(IAuthorizationService inner, Func<int, bool?> beforeCheck) : IAuthorizationService
+    private static void AssertNoPublishedOrTemporaryBackupArtifacts(BackupFixture fixture)
+    {
+        if (!Directory.Exists(fixture.BackupDirectory))
+            return;
+
+        Assert.Empty(Directory.GetFiles(fixture.BackupDirectory, "*.fmbak"));
+        AssertNoTemporaryBackupArtifacts(fixture);
+    }
+
+    private static void AssertNoTemporaryBackupArtifacts(BackupFixture fixture)
+    {
+        Assert.Empty(Directory.GetFiles(fixture.BackupDirectory, ".fmbackup-*.partial"));
+        Assert.Empty(Directory.GetDirectories(fixture.BackupDirectory, ".fmbackup-*.tmp"));
+    }
+
+    private sealed class MaintenanceAuthorizationProbe(IAuthorizationService inner, Func<int, bool?> beforeCheck) : IAuthorizationService
     {
         public int Calls { get; private set; }
         public Task<bool> CanAsync(PermissionModule module, PermissionAction action, CancellationToken cancellationToken = default) =>
