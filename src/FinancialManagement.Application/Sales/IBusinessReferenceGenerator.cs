@@ -10,6 +10,8 @@ public interface IBusinessReferenceGenerator
 
     string GenerateSupplierPaymentReference(DateOnly businessDate);
 
+    string GenerateExpenseReference(DateOnly businessDate);
+
     string GenerateInitialCustomerReceivableReference(DateOnly historicalDate);
 
     string GenerateInitialSupplierPayableReference(DateOnly historicalDate);
