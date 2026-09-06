@@ -65,8 +65,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IBusinessReferenceGenerator, BusinessReferenceGenerator>();
         services.AddScoped<ISaleService, SaleService>();
+        services.AddScoped<IClientService, ClientService>();
         services.AddScoped<IClientLookupService, ClientLookupService>();
         services.AddScoped<IPurchaseService, PurchaseService>();
+        services.AddScoped<ISupplierService, SupplierService>();
         services.AddScoped<ISupplierLookupService, SupplierLookupService>();
         services.AddScoped<IExpenseService, ExpenseService>();
         services.AddScoped<IExpenseCategoryLookupService, ExpenseCategoryLookupService>();
