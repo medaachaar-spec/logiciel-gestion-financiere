@@ -74,7 +74,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IExpenseCategoryLookupService, ExpenseCategoryLookupService>();
         services.AddScoped<IEmployeeLookupService, EmployeeLookupService>();
         services.AddScoped<ICustomerPaymentService, CustomerPaymentService>();
+        services.AddScoped<ICustomerPaymentObligationLookupService, CustomerPaymentObligationLookupService>();
         services.AddScoped<ISupplierPaymentService, SupplierPaymentService>();
+        services.AddScoped<ISupplierPaymentObligationLookupService, SupplierPaymentObligationLookupService>();
         services.AddScoped<IInitialCustomerReceivableService, InitialCustomerReceivableService>();
         services.AddScoped<IInitialSupplierPayableService, InitialSupplierPayableService>();
         services.AddScoped<ICustomerAdvanceService, CustomerAdvanceService>();
