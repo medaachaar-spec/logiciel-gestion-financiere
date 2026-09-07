@@ -120,6 +120,12 @@ public partial class App : System.Windows.Application
         services.AddTransient<SuppliersViewModel>();
         services.AddTransient(provider => new Lazy<SuppliersViewModel>(
             () => provider.GetRequiredService<SuppliersViewModel>()));
+        services.AddTransient<CustomerPaymentsViewModel>();
+        services.AddTransient(provider => new Lazy<CustomerPaymentsViewModel>(
+            () => provider.GetRequiredService<CustomerPaymentsViewModel>()));
+        services.AddTransient<SupplierPaymentsViewModel>();
+        services.AddTransient(provider => new Lazy<SupplierPaymentsViewModel>(
+            () => provider.GetRequiredService<SupplierPaymentsViewModel>()));
         services.AddTransient<ShellViewModel>();
         services.AddTransient<MainWindow>();
 

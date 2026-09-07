@@ -25,6 +25,8 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly Lazy<ExpensesViewModel> _expenses;
     private readonly Lazy<ClientsViewModel> _clients;
     private readonly Lazy<SuppliersViewModel> _suppliers;
+    private readonly Lazy<CustomerPaymentsViewModel> _customerPayments;
+    private readonly Lazy<SupplierPaymentsViewModel> _supplierPayments;
     private readonly Lazy<TreasuryViewModel> _treasury;
     private readonly CancellationTokenSource _navigationCancellation = new();
     private long _navigationRequestVersion;
@@ -42,6 +44,8 @@ public sealed class ShellViewModel : ViewModelBase
         Lazy<ExpensesViewModel> expensesViewModel,
         Lazy<ClientsViewModel> clientsViewModel,
         Lazy<SuppliersViewModel> suppliersViewModel,
+        Lazy<CustomerPaymentsViewModel> customerPaymentsViewModel,
+        Lazy<SupplierPaymentsViewModel> supplierPaymentsViewModel,
         Lazy<TreasuryViewModel> treasuryViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
@@ -54,6 +58,8 @@ public sealed class ShellViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(expensesViewModel);
         ArgumentNullException.ThrowIfNull(clientsViewModel);
         ArgumentNullException.ThrowIfNull(suppliersViewModel);
+        ArgumentNullException.ThrowIfNull(customerPaymentsViewModel);
+        ArgumentNullException.ThrowIfNull(supplierPaymentsViewModel);
         ArgumentNullException.ThrowIfNull(treasuryViewModel);
 
         _currentUserSession = currentUserSession;
@@ -66,6 +72,8 @@ public sealed class ShellViewModel : ViewModelBase
         _expenses = expensesViewModel;
         _clients = clientsViewModel;
         _suppliers = suppliersViewModel;
+        _customerPayments = customerPaymentsViewModel;
+        _supplierPayments = supplierPaymentsViewModel;
         _treasury = treasuryViewModel;
         NavigationItems = new ReadOnlyObservableCollection<NavigationItemViewModel>(
             _navigationItems);
@@ -133,8 +141,20 @@ public sealed class ShellViewModel : ViewModelBase
             string.Empty,
             requiredModule: PermissionModule.Suppliers,
             pageFactory: () => _suppliers.Value);
-        AddNavigationItem("Encaissements clients", "\uE8C7", "customer-payments", "Le contenu métier des encaissements clients sera intégré dans une prochaine étape.", requiredModule: PermissionModule.CustomerPayments);
-        AddNavigationItem("Paiements fournisseurs", "\uE8C7", "supplier-payments", "Le contenu métier des paiements fournisseurs sera intégré dans une prochaine étape.", requiredModule: PermissionModule.SupplierPayments);
+        AddNavigationItem(
+            "Encaissements clients",
+            "\uE8C7",
+            "customer-payments",
+            string.Empty,
+            requiredModule: PermissionModule.CustomerPayments,
+            pageFactory: () => _customerPayments.Value);
+        AddNavigationItem(
+            "Paiements fournisseurs",
+            "\uE8C7",
+            "supplier-payments",
+            string.Empty,
+            requiredModule: PermissionModule.SupplierPayments,
+            pageFactory: () => _supplierPayments.Value);
         AddNavigationItem(
             "Caisse & Banque",
             "\uE8A1",
@@ -406,6 +426,16 @@ public sealed class ShellViewModel : ViewModelBase
             _suppliers.Value.Stop();
         }
 
+        if (_customerPayments.IsValueCreated)
+        {
+            _customerPayments.Value.Stop();
+        }
+
+        if (_supplierPayments.IsValueCreated)
+        {
+            _supplierPayments.Value.Stop();
+        }
+
         if (_treasury.IsValueCreated)
         {
             _treasury.Value.Stop();
@@ -436,6 +466,12 @@ public sealed class ShellViewModel : ViewModelBase
         var suppliersStop = _suppliers.IsValueCreated
             ? _suppliers.Value.StopAsync()
             : Task.CompletedTask;
+        var customerPaymentsStop = _customerPayments.IsValueCreated
+            ? _customerPayments.Value.StopAsync()
+            : Task.CompletedTask;
+        var supplierPaymentsStop = _supplierPayments.IsValueCreated
+            ? _supplierPayments.Value.StopAsync()
+            : Task.CompletedTask;
         var treasuryStop = _treasury.IsValueCreated
             ? _treasury.Value.StopAsync()
             : Task.CompletedTask;
@@ -446,6 +482,8 @@ public sealed class ShellViewModel : ViewModelBase
             expensesStop,
             clientsStop,
             suppliersStop,
+            customerPaymentsStop,
+            supplierPaymentsStop,
             treasuryStop);
     }
 

@@ -42,6 +42,14 @@
                 <views:SuppliersView />
             </DataTemplate>
 
+            <DataTemplate DataType="{x:Type vm:CustomerPaymentsViewModel}">
+                <views:CustomerPaymentsView />
+            </DataTemplate>
+
+            <DataTemplate DataType="{x:Type vm:SupplierPaymentsViewModel}">
+                <views:SupplierPaymentsView />
+            </DataTemplate>
+
             <DataTemplate DataType="{x:Type vm:PlaceholderPageViewModel}">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <views:PlaceholderPageView />
