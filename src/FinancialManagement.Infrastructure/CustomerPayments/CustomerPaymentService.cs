@@ -15,6 +15,269 @@ internal sealed class CustomerPaymentService(
     IBusinessReferenceGenerator referenceGenerator,
     TimeProvider timeProvider) : ICustomerPaymentService
 {
+    public async Task<CustomerPaymentListResult> GetPageAsync(
+        CustomerPaymentListQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!currentUserSession.IsAuthenticated)
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.NotAuthenticated);
+        }
+
+        if (!await authorizationService.CanAsync(
+                PermissionModule.CustomerPayments,
+                PermissionAction.View,
+                cancellationToken))
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.Forbidden);
+        }
+
+        if (query.PageNumber < 1)
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.InvalidPageNumber);
+        }
+
+        if (query.PageSize is < 1 or > 200)
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.InvalidPageSize);
+        }
+
+        if (query.FromDate is DateOnly fromDate
+            && query.ToDate is DateOnly toDate
+            && fromDate > toDate)
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.InvalidDateRange);
+        }
+
+        if (query.PaymentMethod is PaymentMethod paymentMethod
+            && !Enum.IsDefined(paymentMethod))
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.InvalidPaymentMethod);
+        }
+
+        var skip = ((long)query.PageNumber - 1) * query.PageSize;
+        if (skip > int.MaxValue)
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.InvalidPageNumber);
+        }
+
+        var payments = BuildHeaderReadQuery();
+        if (query.FromDate is DateOnly inclusiveFromDate)
+        {
+            payments = payments.Where(payment => payment.PaymentDate >= inclusiveFromDate);
+        }
+
+        if (query.ToDate is DateOnly inclusiveToDate)
+        {
+            payments = payments.Where(payment => payment.PaymentDate <= inclusiveToDate);
+        }
+
+        var searchText = query.SearchText?.Trim();
+        if (!string.IsNullOrEmpty(searchText))
+        {
+            payments = payments.Where(payment =>
+                payment.Reference.Contains(searchText)
+                || (payment.ClientName != null && payment.ClientName.Contains(searchText)));
+        }
+
+        if (query.PaymentMethod is PaymentMethod exactPaymentMethod)
+        {
+            payments = payments.Where(payment => payment.PaymentMethod == exactPaymentMethod);
+        }
+
+        var totalCount = await payments.CountAsync(cancellationToken);
+        var page = await payments
+            .OrderByDescending(payment => payment.PaymentDate)
+            .ThenByDescending(payment => payment.Id)
+            .Skip((int)skip)
+            .Take(query.PageSize)
+            .Select(payment => new CustomerPaymentListProjection
+            {
+                Id = payment.Id,
+                Reference = payment.Reference,
+                PaymentDate = payment.PaymentDate,
+                ClientId = payment.ClientId,
+                ClientName = payment.ClientName,
+                AmountMinor = payment.AmountMinor,
+                PaymentMethod = payment.PaymentMethod,
+                AllocatedAmountMinor = dbContext.CustomerPaymentAllocations
+                    .Where(allocation => allocation.CustomerPaymentId == payment.Id)
+                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0,
+                Observation = payment.Observation
+            })
+            .ToListAsync(cancellationToken);
+
+        if (page.Any(payment =>
+                !HasValidParty(payment.ClientId, payment.ClientName)
+                || !HasValidAggregate(payment.AmountMinor, payment.AllocatedAmountMinor)))
+        {
+            return CustomerPaymentListResult.Failed(
+                query,
+                CustomerPaymentListFailureReason.DataIntegrityViolation);
+        }
+
+        var items = page
+            .Select(payment => new CustomerPaymentListItem(
+                payment.Id,
+                payment.Reference,
+                payment.PaymentDate,
+                payment.ClientId,
+                payment.ClientName,
+                payment.AmountMinor,
+                payment.PaymentMethod,
+                payment.AllocatedAmountMinor,
+                payment.AmountMinor - payment.AllocatedAmountMinor,
+                payment.Observation))
+            .ToList();
+
+        return CustomerPaymentListResult.Succeeded(query, items, totalCount);
+    }
+
+    public async Task<CustomerPaymentDetailResult> GetByIdAsync(
+        long customerPaymentId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!currentUserSession.IsAuthenticated)
+        {
+            return CustomerPaymentDetailResult.Failed(
+                CustomerPaymentDetailFailureReason.NotAuthenticated);
+        }
+
+        if (!await authorizationService.CanAsync(
+                PermissionModule.CustomerPayments,
+                PermissionAction.View,
+                cancellationToken))
+        {
+            return CustomerPaymentDetailResult.Failed(
+                CustomerPaymentDetailFailureReason.Forbidden);
+        }
+
+        if (customerPaymentId <= 0)
+        {
+            return CustomerPaymentDetailResult.Failed(
+                CustomerPaymentDetailFailureReason.InvalidPaymentId);
+        }
+
+        var payment = await BuildHeaderReadQuery()
+            .SingleOrDefaultAsync(item => item.Id == customerPaymentId, cancellationToken);
+
+        if (payment is null)
+        {
+            return CustomerPaymentDetailResult.Failed(
+                CustomerPaymentDetailFailureReason.NotFound);
+        }
+
+        if (!HasValidParty(payment.ClientId, payment.ClientName))
+        {
+            return CustomerPaymentDetailResult.Failed(
+                CustomerPaymentDetailFailureReason.DataIntegrityViolation);
+        }
+
+        var storedAllocations = await (
+            from allocation in dbContext.CustomerPaymentAllocations.AsNoTracking()
+            where allocation.CustomerPaymentId == customerPaymentId
+            join sale in dbContext.Sales.AsNoTracking()
+                on allocation.SaleId equals (long?)sale.Id into sales
+            from sale in sales.DefaultIfEmpty()
+            join receivable in dbContext.InitialCustomerReceivables.AsNoTracking()
+                on allocation.InitialCustomerReceivableId equals (long?)receivable.Id into receivables
+            from receivable in receivables.DefaultIfEmpty()
+            orderby allocation.Id
+            select new CustomerPaymentAllocationProjection
+            {
+                Id = allocation.Id,
+                SaleId = allocation.SaleId,
+                SaleReference = sale == null ? null : sale.Reference,
+                SaleAmountMinor = sale == null ? null : sale.TotalAmountMinor,
+                InitialCustomerReceivableId = allocation.InitialCustomerReceivableId,
+                InitialCustomerReceivableReference = receivable == null ? null : receivable.Reference,
+                InitialCustomerReceivableAmountMinor = receivable == null
+                    ? null
+                    : receivable.InitialAmountMinor,
+                AllocatedAmountMinor = allocation.AmountMinor
+            })
+            .ToListAsync(cancellationToken);
+
+        var allocations = new List<CustomerPaymentAllocationDetailItem>(storedAllocations.Count);
+        var allocatedAmountMinor = 0L;
+        foreach (var allocation in storedAllocations)
+        {
+            CustomerPaymentAllocationDetailItem item;
+            if (allocation.SaleId is long saleId
+                && allocation.InitialCustomerReceivableId is null
+                && allocation.SaleReference is not null
+                && allocation.SaleAmountMinor is long saleAmountMinor)
+            {
+                item = new CustomerPaymentAllocationDetailItem(
+                    allocation.Id,
+                    CustomerPaymentAllocationTargetType.Sale,
+                    saleId,
+                    allocation.SaleReference,
+                    saleAmountMinor,
+                    allocation.AllocatedAmountMinor);
+            }
+            else if (allocation.SaleId is null
+                && allocation.InitialCustomerReceivableId is long receivableId
+                && allocation.InitialCustomerReceivableReference is not null
+                && allocation.InitialCustomerReceivableAmountMinor is long receivableAmountMinor)
+            {
+                item = new CustomerPaymentAllocationDetailItem(
+                    allocation.Id,
+                    CustomerPaymentAllocationTargetType.InitialCustomerReceivable,
+                    receivableId,
+                    allocation.InitialCustomerReceivableReference,
+                    receivableAmountMinor,
+                    allocation.AllocatedAmountMinor);
+            }
+            else
+            {
+                return CustomerPaymentDetailResult.Failed(
+                    CustomerPaymentDetailFailureReason.DataIntegrityViolation);
+            }
+
+            allocatedAmountMinor = checked(allocatedAmountMinor + allocation.AllocatedAmountMinor);
+            allocations.Add(item);
+        }
+
+        if (!HasValidAggregate(payment.AmountMinor, allocatedAmountMinor))
+        {
+            return CustomerPaymentDetailResult.Failed(
+                CustomerPaymentDetailFailureReason.DataIntegrityViolation);
+        }
+
+        return CustomerPaymentDetailResult.Succeeded(new CustomerPaymentDetailItem(
+            payment.Id,
+            payment.Reference,
+            payment.PaymentDate,
+            payment.ClientId,
+            payment.ClientName,
+            payment.AmountMinor,
+            payment.PaymentMethod,
+            allocatedAmountMinor,
+            payment.AmountMinor - allocatedAmountMinor,
+            payment.Observation,
+            allocations));
+    }
+
     public async Task<CreateCustomerPaymentResult> CreateAsync(
         CreateCustomerPaymentCommand command,
         CancellationToken cancellationToken = default)
@@ -265,5 +528,87 @@ internal sealed class CustomerPaymentService(
             throw new InvalidOperationException(
                 "Existing customer payment allocations exceed the obligation amount.");
         }
+    }
+
+    private IQueryable<CustomerPaymentHeaderProjection> BuildHeaderReadQuery() =>
+        from payment in dbContext.CustomerPayments.AsNoTracking()
+        join client in dbContext.Clients.AsNoTracking()
+            on payment.ClientId equals (long?)client.Id into clients
+        from client in clients.DefaultIfEmpty()
+        select new CustomerPaymentHeaderProjection
+        {
+            Id = payment.Id,
+            Reference = payment.Reference,
+            PaymentDate = payment.PaymentDate,
+            ClientId = payment.ClientId,
+            ClientName = client == null ? null : client.Name,
+            AmountMinor = payment.AmountMinor,
+            PaymentMethod = payment.PaymentMethod,
+            Observation = payment.Observation
+        };
+
+    private static bool HasValidParty(long? clientId, string? clientName) =>
+        clientId is null || clientName is not null;
+
+    private static bool HasValidAggregate(long amountMinor, long allocatedAmountMinor) =>
+        allocatedAmountMinor >= 0 && allocatedAmountMinor <= amountMinor;
+
+    private sealed class CustomerPaymentHeaderProjection
+    {
+        public long Id { get; init; }
+
+        public required string Reference { get; init; }
+
+        public DateOnly PaymentDate { get; init; }
+
+        public long? ClientId { get; init; }
+
+        public string? ClientName { get; init; }
+
+        public long AmountMinor { get; init; }
+
+        public PaymentMethod PaymentMethod { get; init; }
+
+        public string? Observation { get; init; }
+    }
+
+    private sealed class CustomerPaymentListProjection
+    {
+        public long Id { get; init; }
+
+        public required string Reference { get; init; }
+
+        public DateOnly PaymentDate { get; init; }
+
+        public long? ClientId { get; init; }
+
+        public string? ClientName { get; init; }
+
+        public long AmountMinor { get; init; }
+
+        public PaymentMethod PaymentMethod { get; init; }
+
+        public long AllocatedAmountMinor { get; init; }
+
+        public string? Observation { get; init; }
+    }
+
+    private sealed class CustomerPaymentAllocationProjection
+    {
+        public long Id { get; init; }
+
+        public long? SaleId { get; init; }
+
+        public string? SaleReference { get; init; }
+
+        public long? SaleAmountMinor { get; init; }
+
+        public long? InitialCustomerReceivableId { get; init; }
+
+        public string? InitialCustomerReceivableReference { get; init; }
+
+        public long? InitialCustomerReceivableAmountMinor { get; init; }
+
+        public long AllocatedAmountMinor { get; init; }
     }
 }
