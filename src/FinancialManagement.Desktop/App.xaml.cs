@@ -3,9 +3,11 @@ using System.Windows;
 using System.Diagnostics;
 using System.IO;
 using FinancialManagement.Application.Authentication;
+using FinancialManagement.Application.Initialization;
 using FinancialManagement.Desktop.Configuration;
 using FinancialManagement.Desktop.Services;
 using FinancialManagement.Desktop.ViewModels;
+using FinancialManagement.Domain.Enums;
 using FinancialManagement.Infrastructure;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -51,14 +53,46 @@ public partial class App : System.Windows.Application
 
         try
         {
-            var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
-
             while (true)
             {
+                var initializationState = await GetInitializationStateAsync(serviceProvider);
+                if (initializationState.RequiresBootstrap)
+                {
+                    if (!await ShowFirstRunAsync(serviceProvider))
+                    {
+                        Shutdown();
+                        return;
+                    }
+
+                    continue;
+                }
+
                 if (!ShowLogin(serviceProvider))
                 {
                     Shutdown();
                     return;
+                }
+
+                var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
+                initializationState = await GetInitializationStateAsync(serviceProvider);
+                if (!initializationState.IsInitializationComplete)
+                {
+                    if (currentUserSession.Role != UserRole.Responsable)
+                    {
+                        MessageBox.Show(
+                            "L'initialisation doit être terminée par un Responsable avant d'accéder à l'application.",
+                            "Configuration requise",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Information);
+                        Logout(serviceProvider);
+                        continue;
+                    }
+
+                    if (!await ShowInitializationAsync(serviceProvider))
+                    {
+                        Logout(serviceProvider);
+                        continue;
+                    }
                 }
 
                 var shellCompleted = await ShowShellAsync(serviceProvider);
@@ -95,6 +129,10 @@ public partial class App : System.Windows.Application
 
         services.AddSingleton(paths);
         services.AddInfrastructure(connectionString);
+        services.AddTransient<BootstrapViewModel>();
+        services.AddTransient<FirstRunWindow>();
+        services.AddTransient<InitializationViewModel>();
+        services.AddTransient<InitializationWindow>();
         services.AddTransient<LoginViewModel>();
         services.AddTransient<LoginWindow>();
         services.AddScoped<DashboardOperationCoordinator>();
@@ -126,6 +164,11 @@ public partial class App : System.Windows.Application
         services.AddTransient<SupplierPaymentsViewModel>();
         services.AddTransient(provider => new Lazy<SupplierPaymentsViewModel>(
             () => provider.GetRequiredService<SupplierPaymentsViewModel>()));
+        services.AddTransient<InitialCustomerReceivablesViewModel>();
+        services.AddTransient<InitialSupplierPayablesViewModel>();
+        services.AddTransient<AdministrationViewModel>();
+        services.AddTransient(provider => new Lazy<AdministrationViewModel>(
+            () => provider.GetRequiredService<AdministrationViewModel>()));
         services.AddTransient<ShellViewModel>();
         services.AddTransient<MainWindow>();
 
@@ -153,6 +196,54 @@ public partial class App : System.Windows.Application
         var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
 
         return loginSucceeded && currentUserSession.IsAuthenticated;
+    }
+
+    private static async Task<ApplicationInitializationState> GetInitializationStateAsync(
+        ServiceProvider serviceProvider)
+    {
+        await using var scope = serviceProvider.CreateAsyncScope();
+        return await scope.ServiceProvider
+            .GetRequiredService<IApplicationInitializationService>()
+            .GetStateAsync();
+    }
+
+    private async Task<bool> ShowFirstRunAsync(ServiceProvider serviceProvider)
+    {
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var window = scope.ServiceProvider.GetRequiredService<FirstRunWindow>();
+        MainWindow = window;
+        var completed = window.ShowDialog() == true;
+        await window.StopAsync();
+        return completed;
+    }
+
+    private async Task<bool> ShowInitializationAsync(ServiceProvider serviceProvider)
+    {
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var window = scope.ServiceProvider.GetRequiredService<InitializationWindow>();
+        if (await window.PrepareAsync())
+        {
+            await window.StopAsync();
+            return true;
+        }
+
+        var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
+        if (!currentUserSession.IsAuthenticated || currentUserSession.Role != UserRole.Responsable)
+        {
+            await window.StopAsync();
+            return false;
+        }
+
+        MainWindow = window;
+        var completed = window.ShowDialog() == true;
+        await window.StopAsync();
+        return completed;
+    }
+
+    private static void Logout(ServiceProvider serviceProvider)
+    {
+        using var scope = serviceProvider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IAuthenticationService>().Logout();
     }
 
     private async Task<bool> ShowShellAsync(ServiceProvider serviceProvider)

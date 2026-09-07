@@ -28,6 +28,7 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly Lazy<CustomerPaymentsViewModel> _customerPayments;
     private readonly Lazy<SupplierPaymentsViewModel> _supplierPayments;
     private readonly Lazy<TreasuryViewModel> _treasury;
+    private readonly Lazy<AdministrationViewModel> _administration;
     private readonly CancellationTokenSource _navigationCancellation = new();
     private long _navigationRequestVersion;
     private bool _isInitialized;
@@ -46,7 +47,8 @@ public sealed class ShellViewModel : ViewModelBase
         Lazy<SuppliersViewModel> suppliersViewModel,
         Lazy<CustomerPaymentsViewModel> customerPaymentsViewModel,
         Lazy<SupplierPaymentsViewModel> supplierPaymentsViewModel,
-        Lazy<TreasuryViewModel> treasuryViewModel)
+        Lazy<TreasuryViewModel> treasuryViewModel,
+        Lazy<AdministrationViewModel> administrationViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
         ArgumentNullException.ThrowIfNull(authorizationService);
@@ -61,6 +63,7 @@ public sealed class ShellViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(customerPaymentsViewModel);
         ArgumentNullException.ThrowIfNull(supplierPaymentsViewModel);
         ArgumentNullException.ThrowIfNull(treasuryViewModel);
+        ArgumentNullException.ThrowIfNull(administrationViewModel);
 
         _currentUserSession = currentUserSession;
         _authorizationService = authorizationService;
@@ -75,6 +78,7 @@ public sealed class ShellViewModel : ViewModelBase
         _customerPayments = customerPaymentsViewModel;
         _supplierPayments = supplierPaymentsViewModel;
         _treasury = treasuryViewModel;
+        _administration = administrationViewModel;
         NavigationItems = new ReadOnlyObservableCollection<NavigationItemViewModel>(
             _navigationItems);
 
@@ -162,7 +166,13 @@ public sealed class ShellViewModel : ViewModelBase
             "Le contenu métier de la caisse et de la banque sera intégré dans une prochaine étape.",
             requiredCapability: ResponsibleCapability.Treasury,
             pageFactory: () => _treasury.Value);
-        AddNavigationItem("Administration", "\uE713", "administration", "Le contenu métier de l'administration sera intégré dans une prochaine étape.", requiredCapability: ResponsibleCapability.Administration);
+        AddNavigationItem(
+            "Administration",
+            "\uE713",
+            "administration",
+            string.Empty,
+            requiredCapability: ResponsibleCapability.Administration,
+            pageFactory: ResolveAdministrationPage);
     }
 
     public ReadOnlyObservableCollection<NavigationItemViewModel> NavigationItems { get; }
@@ -441,6 +451,12 @@ public sealed class ShellViewModel : ViewModelBase
             _treasury.Value.Stop();
         }
 
+        if (_administration.IsValueCreated)
+        {
+            _administration.Value.AuthenticationInvalidated -= Administration_AuthenticationInvalidated;
+            _administration.Value.Deactivate();
+        }
+
         SetAllItemsHidden();
         CurrentPage = null;
     }
@@ -475,6 +491,9 @@ public sealed class ShellViewModel : ViewModelBase
         var treasuryStop = _treasury.IsValueCreated
             ? _treasury.Value.StopAsync()
             : Task.CompletedTask;
+        var administrationStop = _administration.IsValueCreated
+            ? _administration.Value.StopAsync()
+            : Task.CompletedTask;
         await Task.WhenAll(
             dashboardStop,
             salesStop,
@@ -484,8 +503,19 @@ public sealed class ShellViewModel : ViewModelBase
             suppliersStop,
             customerPaymentsStop,
             supplierPaymentsStop,
-            treasuryStop);
+            treasuryStop,
+            administrationStop);
     }
+
+    private AdministrationViewModel ResolveAdministrationPage()
+    {
+        var viewModel = _administration.Value;
+        viewModel.AuthenticationInvalidated -= Administration_AuthenticationInvalidated;
+        viewModel.AuthenticationInvalidated += Administration_AuthenticationInvalidated;
+        return viewModel;
+    }
+
+    private void Administration_AuthenticationInvalidated(object? sender, EventArgs e) => RequestLogout();
 
     private void SetNoAuthorizedModulePage()
     {
