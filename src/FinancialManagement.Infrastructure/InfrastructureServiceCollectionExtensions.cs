@@ -1,4 +1,8 @@
 using FinancialManagement.Application.Authentication;
+using FinancialManagement.Application.Administration;
+using FinancialManagement.Application.Initialization;
+using FinancialManagement.Infrastructure.Administration;
+using FinancialManagement.Infrastructure.Initialization;
 using FinancialManagement.Application.Authorization;
 using FinancialManagement.Application.Backup;
 using FinancialManagement.Application.Clients;
@@ -61,6 +65,8 @@ public static class InfrastructureServiceCollectionExtensions
             serviceProvider.GetRequiredService<CurrentUserSession>());
         services.AddSingleton<IPasswordHasher, MicrosoftIdentityPasswordHasher>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
+        services.AddScoped<IApplicationInitializationService, ApplicationInitializationService>();
+        services.AddScoped<IUserAdministrationService, UserAdministrationService>();
         services.AddScoped<IAuthorizationService, AuthorizationService>();
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
         services.TryAddSingleton<IBusinessReferenceGenerator, BusinessReferenceGenerator>();
