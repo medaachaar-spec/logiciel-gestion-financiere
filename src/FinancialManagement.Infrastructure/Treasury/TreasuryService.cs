@@ -4,6 +4,7 @@ using FinancialManagement.Application.Sales;
 using FinancialManagement.Application.Treasury;
 using FinancialManagement.Domain.Entities;
 using FinancialManagement.Domain.Enums;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinancialManagement.Infrastructure.Treasury;
@@ -50,7 +51,19 @@ internal sealed class TreasuryService(
         };
 
         dbContext.TreasuryOpeningBalances.Add(openingBalance);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqliteException sqlite
+            && sqlite.SqliteExtendedErrorCode == 2067
+            && sqlite.Message.Contains("UX_TreasuryOpeningBalance_Singleton", StringComparison.Ordinal))
+        {
+            // Another initialization won after AnyAsync. Keep its values and discard only our failed insert.
+            dbContext.Entry(openingBalance).State = EntityState.Detached;
+            return CreateTreasuryOpeningBalanceResult.Failed(
+                CreateTreasuryOpeningBalanceFailureReason.AlreadyInitialized);
+        }
 
         return CreateTreasuryOpeningBalanceResult.Succeeded(
             openingBalance.Id,
