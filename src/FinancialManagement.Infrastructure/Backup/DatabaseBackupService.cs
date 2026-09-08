@@ -549,6 +549,11 @@ internal sealed class DatabaseBackupService(
                 return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
             }
 
+            // Before staging migration, after migration and after live swap.
+            // Also reject malformed backup snapshots; never rewrite their amounts.
+            if (!await FinancialStorageValidator.ValidateAsync(connection, allowEmpty: false, cancellationToken))
+                return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+
             if (requireAllocationIntegrity)
             {
                 // A structurally valid backup may still contain impossible sums.

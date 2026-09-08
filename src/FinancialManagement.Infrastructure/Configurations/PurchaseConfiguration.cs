@@ -14,6 +14,11 @@ internal sealed class PurchaseConfiguration : IEntityTypeConfiguration<Purchase>
                 "CK_Purchases_TotalAmountMinor_Positive",
                 "\"TotalAmountMinor\" > 0"));
         builder.HasKey(purchase => purchase.Id);
+        builder.ToTable("Purchases", table =>
+        {
+            table.HasCheckConstraint("CK_Purchases_TotalAmountMinor_IntegerStorage",
+                "typeof(\"TotalAmountMinor\") = 'integer'");
+        });
 
         builder.Property(purchase => purchase.Reference).IsRequired();
 

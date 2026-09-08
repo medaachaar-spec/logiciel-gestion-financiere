@@ -14,6 +14,11 @@ internal sealed class SupplierPaymentConfiguration : IEntityTypeConfiguration<Su
                 "CK_SupplierPayments_AmountMinor_Positive",
                 "\"AmountMinor\" > 0"));
         builder.HasKey(payment => payment.Id);
+        builder.ToTable("SupplierPayments", table =>
+        {
+            table.HasCheckConstraint("CK_SupplierPayments_AmountMinor_IntegerStorage",
+                "typeof(\"AmountMinor\") = 'integer'");
+        });
 
         builder.Property(payment => payment.Reference).IsRequired();
         builder.Property(payment => payment.PaymentMethod).HasConversion<string>().IsRequired();

@@ -14,6 +14,11 @@ internal sealed class ExpenseConfiguration : IEntityTypeConfiguration<Expense>
                 "CK_Expenses_AmountMinor_Positive",
                 "\"AmountMinor\" > 0"));
         builder.HasKey(expense => expense.Id);
+        builder.ToTable("Expenses", table =>
+        {
+            table.HasCheckConstraint("CK_Expenses_AmountMinor_IntegerStorage",
+                "typeof(\"AmountMinor\") = 'integer'");
+        });
 
         builder.Property(expense => expense.Reference).IsRequired();
         builder.Property(expense => expense.PaymentMethod).HasConversion<string>().IsRequired();

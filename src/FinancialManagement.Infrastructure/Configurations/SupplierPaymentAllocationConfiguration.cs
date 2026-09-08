@@ -22,6 +22,11 @@ internal sealed class SupplierPaymentAllocationConfiguration
                     "OR (\"PurchaseId\" IS NULL AND \"InitialSupplierPayableId\" IS NOT NULL)");
             });
         builder.HasKey(allocation => allocation.Id);
+        builder.ToTable("SupplierPaymentAllocations", table =>
+        {
+            table.HasCheckConstraint("CK_SupplierPaymentAllocations_AmountMinor_IntegerStorage",
+                "typeof(\"AmountMinor\") = 'integer'");
+        });
 
         builder.HasIndex(allocation => allocation.SupplierPaymentId);
         builder.HasIndex(allocation => allocation.PurchaseId);

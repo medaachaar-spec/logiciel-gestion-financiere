@@ -126,6 +126,7 @@ public sealed partial class DatabaseBackupServiceTests
     [InlineData(1)]
     [InlineData(2)]
     [InlineData(3)]
+    [InlineData(4)]
     public async Task Restore_AcceptsExactSupportedSchemaAndMigratesOnlyStaging(int version)
     {
         await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
@@ -139,7 +140,7 @@ public sealed partial class DatabaseBackupServiceTests
         Assert.False(fixture.Session.IsAuthenticated);
         Assert.Equal(sourceHash, await HashFileAsync(artifact));
         Assert.Equal(version, await ScalarLongAsync(database, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
-        Assert.Equal(3, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
+        Assert.Equal(4, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
         Assert.Equal(1, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM Clients WHERE Name='Historical data';"));
         await using var live = NewConnection(fixture.LivePath);
         await live.OpenAsync();
@@ -152,7 +153,7 @@ public sealed partial class DatabaseBackupServiceTests
     {
         await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
         var database = Path.Combine(fixture.Root, "legitimate.db");
-        await CreateApplicationDatabaseAsync(database, 3, activeResponsible: true);
+        await CreateApplicationDatabaseAsync(database, 4, activeResponsible: true);
         await ExecuteAsync(database,
             "DROP INDEX UX_TreasuryOpeningBalance_Singleton; create unique index [UX_TreasuryOpeningBalance_Singleton] on `TreasuryOpeningBalance` (/* constant */(1)); ANALYZE;");
         await RewriteSchemaAsync(database, "ApplicationSettings", "\"CompanyName\" TEXT NOT NULL", "[CompanyName] /* legitimate formatting */ text not null");
@@ -167,7 +168,7 @@ public sealed partial class DatabaseBackupServiceTests
     {
         await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
         var database = Path.Combine(fixture.Root, "metadata.db");
-        await CreateApplicationDatabaseAsync(database, 3, activeResponsible: true);
+        await CreateApplicationDatabaseAsync(database, 4, activeResponsible: true);
         var validator = new DatabaseSchemaValidator(fixture.Context, new SchemaTestLogger(output));
         var migrations = fixture.Context.Database.GetMigrations().ToArray();
         var before = await HashFileAsync(database);

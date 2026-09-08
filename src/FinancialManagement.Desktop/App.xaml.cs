@@ -43,7 +43,10 @@ public partial class App : System.Windows.Application
         {
             Trace.TraceError("Application data initialization failed: {0}", exception);
             MessageBox.Show(
-                "Impossible d'initialiser les données de l'application.",
+                exception is FinancialStorageIntegrityException
+                    ? "La base de données contient des données financières dans un format invalide. "
+                        + "Le démarrage a été bloqué afin d’éviter une altération des montants."
+                    : "Impossible d'initialiser les données de l'application.",
                 "Démarrage impossible",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -183,7 +186,7 @@ public partial class App : System.Windows.Application
     {
         await using var scope = serviceProvider.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FinancialManagementDbContext>();
-        await dbContext.Database.MigrateAsync();
+        await FinancialDatabaseStartup.InitializeAsync(dbContext);
     }
 
     private bool ShowLogin(ServiceProvider serviceProvider)

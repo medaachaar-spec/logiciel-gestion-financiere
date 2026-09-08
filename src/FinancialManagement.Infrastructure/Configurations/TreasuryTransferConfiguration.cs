@@ -20,6 +20,11 @@ internal sealed class TreasuryTransferConfiguration : IEntityTypeConfiguration<T
                     "\"FromAccount\" <> \"ToAccount\"");
             });
         builder.HasKey(transfer => transfer.Id);
+        builder.ToTable("TreasuryTransfers", table =>
+        {
+            table.HasCheckConstraint("CK_TreasuryTransfers_AmountMinor_IntegerStorage",
+                "typeof(\"AmountMinor\") = 'integer'");
+        });
 
         builder.Property(transfer => transfer.Reference).IsRequired();
         builder.Property(transfer => transfer.FromAccount).HasConversion<string>().IsRequired();

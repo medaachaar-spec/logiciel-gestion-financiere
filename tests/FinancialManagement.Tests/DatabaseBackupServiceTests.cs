@@ -122,7 +122,7 @@ public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
         await using var backup = fixture.CreateIndependentContext(databasePath);
         Assert.Equal("ok", await ScalarStringAsync(databasePath, "PRAGMA integrity_check;"));
         Assert.Equal(0L, await ScalarLongAsync(databasePath, "SELECT COUNT(*) FROM pragma_foreign_key_check;"));
-        Assert.Equal(3L, await ScalarLongAsync(databasePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
+        Assert.Equal(4L, await ScalarLongAsync(databasePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
         Assert.Equal(1, await backup.Clients.CountAsync(client => client.Name == "Client A"));
         Assert.Equal(125_075, await backup.Sales.Where(sale => sale.Reference == "SALE-A").Select(sale => sale.TotalAmountMinor).SingleAsync());
         Assert.Equal(80_000, await backup.Purchases.Where(purchase => purchase.Reference == "PURCHASE-A").Select(purchase => purchase.TotalAmountMinor).SingleAsync());
@@ -366,7 +366,7 @@ public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
         Assert.True(result.Success);
         Assert.Equal(hashBefore, await HashFileAsync(artifactPath));
         Assert.Equal(2L, await ScalarLongAsync(oldBackup, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
-        Assert.Equal(3L, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
+        Assert.Equal(4L, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
         Assert.Equal(1L, await ScalarLongAsync(fixture.LivePath,
             "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='UX_TreasuryOpeningBalance_Singleton';"));
         Assert.Equal(1L, await ScalarLongAsync(fixture.LivePath, "SELECT COUNT(*) FROM Clients WHERE Name='Old data';"));

@@ -45,7 +45,7 @@ public sealed class FinancialManagementMigrationTests
         database.Context.Database.Migrate();
 
         var appliedMigrations = database.Context.Database.GetAppliedMigrations().ToArray();
-        Assert.Equal(3, appliedMigrations.Length);
+        Assert.Equal(4, appliedMigrations.Length);
         Assert.EndsWith("_001_InitialSchema", appliedMigrations[0], StringComparison.Ordinal);
         Assert.EndsWith(
             "_002_AllowAnonymousSalePayments",
@@ -55,6 +55,7 @@ public sealed class FinancialManagementMigrationTests
             "_003_TreasuryOpeningBalanceSingleton",
             appliedMigrations[2],
             StringComparison.Ordinal);
+        Assert.EndsWith("_004_EnforceFinancialIntegerStorageClass", appliedMigrations[3], StringComparison.Ordinal);
 
         var tables = database.Context.Database
             .SqlQueryRaw<string>(
@@ -82,7 +83,7 @@ public sealed class FinancialManagementMigrationTests
 
         database.Context.Database.Migrate();
 
-        Assert.Equal(3, database.Context.Database.GetAppliedMigrations().Count());
+        Assert.Equal(4, database.Context.Database.GetAppliedMigrations().Count());
         Assert.Equal(5, database.Context.ExpenseCategories.Count());
     }
 

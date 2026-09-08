@@ -22,6 +22,11 @@ internal sealed class CustomerPaymentAllocationConfiguration
                     "OR (\"SaleId\" IS NULL AND \"InitialCustomerReceivableId\" IS NOT NULL)");
             });
         builder.HasKey(allocation => allocation.Id);
+        builder.ToTable("CustomerPaymentAllocations", table =>
+        {
+            table.HasCheckConstraint("CK_CustomerPaymentAllocations_AmountMinor_IntegerStorage",
+                "typeof(\"AmountMinor\") = 'integer'");
+        });
 
         builder.HasIndex(allocation => allocation.CustomerPaymentId);
         builder.HasIndex(allocation => allocation.SaleId);

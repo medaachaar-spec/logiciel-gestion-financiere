@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using FinancialManagement.Infrastructure.Migrations;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -69,6 +71,15 @@ internal sealed class DatabaseSchemaValidator(FinancialManagementDbContext conte
         foreach (var id in applied)
         {
             var source = assembly.CreateMigration(assembly.Migrations[id], provider);
+            // 004 has a frozen, explicitly reviewed SQL contract. Only this exact
+            // non-suppressed operation is accepted; final tables/CHECKs/indexes/FKs
+            // are still compared below against its compiled target model plus 003.
+            if (source is _004_EnforceFinancialIntegerStorageClass)
+            {
+                if (!HasApprovedStorageMigrationSql(source))
+                    return false;
+                continue;
+            }
             foreach (var sql in source.UpOperations.OfType<SqlOperation>())
             {
                 if (source is not _003_TreasuryOpeningBalanceSingleton || hasSingleton) return false;
@@ -115,6 +126,14 @@ internal sealed class DatabaseSchemaValidator(FinancialManagementDbContext conte
             return string.Concat(generator.Generate([sqlOperation], model).Select(command => command.CommandText));
         }
     }
+
+    internal static bool HasApprovedStorageMigrationSql(Migration migration) =>
+        migration is _004_EnforceFinancialIntegerStorageClass
+        && migration.UpOperations.Count == 1
+        && migration.UpOperations[0] is SqlOperation { SuppressTransaction: false } operation
+        // Fingerprint of the reviewed, frozen 004 Up operation (LF-normalized).
+        && Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(operation.Sql.Replace("\r\n", "\n"))))
+            == "352673232CDDE978D8C99B279435B991D14B56D21919C16A12CC6354B992A526";
 
     private bool Reject(string name)
     {
