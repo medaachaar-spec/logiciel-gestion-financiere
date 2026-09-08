@@ -86,6 +86,8 @@ internal sealed class CustomerAdvanceService(
             }
         }
 
+        // Microsoft.Data.Sqlite starts an IMMEDIATE transaction here: reserve the
+        // writer before reading persisted availability, and keep it until commit.
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
@@ -105,14 +107,18 @@ internal sealed class CustomerAdvanceService(
             return Failed(ApplyCustomerAdvanceFailureReason.SourcePaymentNotEligible);
         }
 
-        var existingSourceAllocatedMinor = await dbContext.CustomerPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation => allocation.CustomerPaymentId == sourcePayment.Id)
-            .SumAsync(allocation => allocation.AmountMinor, cancellationToken);
-        EnsureExistingAllocationsAreValid(
-            existingSourceAllocatedMinor,
-            sourcePayment.AmountMinor,
-            "customer payment");
+        if (sourcePayment.AmountMinor <= 0)
+        {
+            return Failed(ApplyCustomerAdvanceFailureReason.DataIntegrityViolation);
+        }
+
+        var integrity = await AllocationIntegrity.ReadCustomerAsync(
+            dbContext, saleIds, initialReceivableIds, sourcePayment.Id, cancellationToken);
+        if (integrity is null)
+        {
+            return Failed(ApplyCustomerAdvanceFailureReason.DataIntegrityViolation);
+        }
+        var existingSourceAllocatedMinor = integrity.SourceAllocatedMinor;
         var availableAdvanceMinor = sourcePayment.AmountMinor - existingSourceAllocatedMinor;
 
         if (availableAdvanceMinor == 0)
@@ -153,22 +159,8 @@ internal sealed class CustomerAdvanceService(
             return Failed(ApplyCustomerAdvanceFailureReason.ObligationNotFound);
         }
 
-        var existingSaleAllocations = await dbContext.CustomerPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.SaleId.HasValue && saleIds.Contains(allocation.SaleId.Value))
-            .GroupBy(allocation => allocation.SaleId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
-
-        var existingReceivableAllocations = await dbContext.CustomerPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.InitialCustomerReceivableId.HasValue
-                && initialReceivableIds.Contains(allocation.InitialCustomerReceivableId.Value))
-            .GroupBy(allocation => allocation.InitialCustomerReceivableId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
+        var existingSaleAllocations = integrity.Documents;
+        var existingReceivableAllocations = integrity.Initials;
 
         foreach (var allocation in requestedAllocations)
         {
@@ -181,10 +173,10 @@ internal sealed class CustomerAdvanceService(
                 }
 
                 existingSaleAllocations.TryGetValue(saleId, out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    sale.TotalAmountMinor,
-                    "sale");
+                if (sale.TotalAmountMinor <= 0)
+                {
+                    return Failed(ApplyCustomerAdvanceFailureReason.DataIntegrityViolation);
+                }
 
                 if (allocation.AmountMinor > sale.TotalAmountMinor - existingAllocatedMinor)
                 {
@@ -203,10 +195,10 @@ internal sealed class CustomerAdvanceService(
                 existingReceivableAllocations.TryGetValue(
                     receivableId,
                     out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    receivable.InitialAmountMinor,
-                    "initial customer receivable");
+                if (receivable.InitialAmountMinor <= 0)
+                {
+                    return Failed(ApplyCustomerAdvanceFailureReason.DataIntegrityViolation);
+                }
 
                 if (allocation.AmountMinor > receivable.InitialAmountMinor - existingAllocatedMinor)
                 {
@@ -243,16 +235,4 @@ internal sealed class CustomerAdvanceService(
     private static ApplyCustomerAdvanceResult Failed(
         ApplyCustomerAdvanceFailureReason failureReason) =>
         ApplyCustomerAdvanceResult.Failed(failureReason);
-
-    private static void EnsureExistingAllocationsAreValid(
-        long allocatedAmountMinor,
-        long maximumAmountMinor,
-        string subject)
-    {
-        if (allocatedAmountMinor < 0 || allocatedAmountMinor > maximumAmountMinor)
-        {
-            throw new InvalidOperationException(
-                $"Existing allocations exceed the {subject} amount.");
-        }
-    }
 }

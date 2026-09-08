@@ -569,7 +569,7 @@ public sealed class SupplierPaymentServiceTests
     }
 
     [Fact]
-    public async Task Corrupted_existing_overallocation_raises_technical_error()
+    public async Task Corrupted_existing_overallocation_returns_integrity_failure()
     {
         using var database = new SupplierPaymentServiceTestDatabase();
         var user = database.AddUser("corrupted-overallocation", UserRole.Responsable);
@@ -584,9 +584,10 @@ public sealed class SupplierPaymentServiceTests
         var paymentsBefore = database.Context.SupplierPayments.Count();
         var allocationsBefore = database.Context.SupplierPaymentAllocations.Count();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            database.SupplierPaymentService.CreateAsync(
-                CreateCommand(supplier.Id, 100, PurchaseAllocation(purchase.Id, 100))));
+        var result = await database.SupplierPaymentService.CreateAsync(
+                CreateCommand(supplier.Id, 100, PurchaseAllocation(purchase.Id, 100)));
+        Assert.False(result.Success);
+        Assert.Equal(CreateSupplierPaymentFailureReason.DataIntegrityViolation, result.FailureReason);
 
         Assert.Equal(paymentsBefore, database.Context.SupplierPayments.Count());
         Assert.Equal(allocationsBefore, database.Context.SupplierPaymentAllocations.Count());

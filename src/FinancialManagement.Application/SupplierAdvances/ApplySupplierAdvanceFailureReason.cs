@@ -14,5 +14,6 @@ public enum ApplySupplierAdvanceFailureReason
     ObligationNotFound,
     ObligationBelongsToDifferentSupplier,
     AllocationExceedsOutstanding,
-    AllocationsExceedAvailableAdvance
+    AllocationsExceedAvailableAdvance,
+    DataIntegrityViolation
 }

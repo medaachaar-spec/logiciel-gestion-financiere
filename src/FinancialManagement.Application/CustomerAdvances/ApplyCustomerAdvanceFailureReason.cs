@@ -15,5 +15,6 @@ public enum ApplyCustomerAdvanceFailureReason
     ObligationNotFound,
     ObligationBelongsToDifferentClient,
     AllocationExceedsOutstanding,
-    AllocationsExceedAvailableAdvance
+    AllocationsExceedAvailableAdvance,
+    DataIntegrityViolation
 }

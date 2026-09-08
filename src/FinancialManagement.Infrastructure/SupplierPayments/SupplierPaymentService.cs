@@ -117,12 +117,28 @@ internal sealed class SupplierPaymentService(
                 SupplierName = payment.SupplierName,
                 AmountMinor = payment.AmountMinor,
                 PaymentMethod = payment.PaymentMethod,
-                AllocatedAmountMinor = dbContext.SupplierPaymentAllocations
-                    .Where(allocation => allocation.SupplierPaymentId == payment.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0,
                 Observation = payment.Observation
             })
             .ToListAsync(cancellationToken);
+
+        var pageById = page.ToDictionary(payment => payment.Id);
+        var pageIds = pageById.Keys.ToArray();
+        var storedAmounts = await dbContext.SupplierPaymentAllocations.AsNoTracking()
+            .Where(allocation => pageIds.Contains(allocation.SupplierPaymentId))
+            .Select(allocation => new { PaymentId = allocation.SupplierPaymentId, allocation.AmountMinor })
+            .ToListAsync(cancellationToken);
+        var totals = new Dictionary<long, long>();
+        foreach (var allocation in storedAmounts)
+        {
+            if (!AllocationIntegrity.TryAccumulate(totals, allocation.PaymentId,
+                    allocation.AmountMinor, pageById[allocation.PaymentId].AmountMinor))
+            {
+                return SupplierPaymentListResult.Failed(
+                    query, SupplierPaymentListFailureReason.DataIntegrityViolation);
+            }
+        }
+        foreach (var payment in page)
+            payment.AllocatedAmountMinor = totals.GetValueOrDefault(payment.Id);
 
         if (page.Any(payment =>
                 payment.SupplierName is null
@@ -254,6 +270,14 @@ internal sealed class SupplierPaymentService(
                     SupplierPaymentDetailFailureReason.DataIntegrityViolation);
             }
 
+            if (allocation.AllocatedAmountMinor <= 0
+                || payment.AmountMinor <= 0
+                || allocation.AllocatedAmountMinor > payment.AmountMinor - allocatedAmountMinor)
+            {
+                return SupplierPaymentDetailResult.Failed(
+                    SupplierPaymentDetailFailureReason.DataIntegrityViolation);
+            }
+
             allocatedAmountMinor = checked(allocatedAmountMinor + allocation.AllocatedAmountMinor);
             allocations.Add(item);
         }
@@ -369,6 +393,11 @@ internal sealed class SupplierPaymentService(
             }
         }
 
+        // Microsoft.Data.Sqlite starts an IMMEDIATE transaction here: reserve the
+        // writer before reading persisted availability, and keep it until commit.
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken);
+
         var supplierExists = await dbContext.Suppliers
             .AsNoTracking()
             .AnyAsync(supplier => supplier.Id == command.SupplierId, cancellationToken);
@@ -381,9 +410,6 @@ internal sealed class SupplierPaymentService(
         var createdAtUtc = timeProvider.GetUtcNow();
         var localDateTime = TimeZoneInfo.ConvertTime(createdAtUtc, timeProvider.LocalTimeZone);
         var businessDate = DateOnly.FromDateTime(localDateTime.DateTime);
-
-        await using var transaction = await dbContext.Database
-            .BeginTransactionAsync(cancellationToken);
 
         var purchases = await dbContext.Purchases
             .AsNoTracking()
@@ -412,22 +438,15 @@ internal sealed class SupplierPaymentService(
             return Failed(CreateSupplierPaymentFailureReason.ObligationNotFound, command);
         }
 
-        var existingPurchaseAllocations = await dbContext.SupplierPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.PurchaseId.HasValue && purchaseIds.Contains(allocation.PurchaseId.Value))
-            .GroupBy(allocation => allocation.PurchaseId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
+        var integrity = await AllocationIntegrity.ReadSupplierAsync(
+            dbContext, purchaseIds, initialPayableIds, null, cancellationToken);
+        if (integrity is null)
+        {
+            return Failed(CreateSupplierPaymentFailureReason.DataIntegrityViolation, command);
+        }
 
-        var existingPayableAllocations = await dbContext.SupplierPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.InitialSupplierPayableId.HasValue
-                && initialPayableIds.Contains(allocation.InitialSupplierPayableId.Value))
-            .GroupBy(allocation => allocation.InitialSupplierPayableId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
+        var existingPurchaseAllocations = integrity.Documents;
+        var existingPayableAllocations = integrity.Initials;
 
         foreach (var allocation in requestedAllocations)
         {
@@ -444,9 +463,10 @@ internal sealed class SupplierPaymentService(
                 existingPurchaseAllocations.TryGetValue(
                     purchaseId,
                     out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    purchase.TotalAmountMinor);
+                if (purchase.TotalAmountMinor <= 0)
+                {
+                    return Failed(CreateSupplierPaymentFailureReason.DataIntegrityViolation, command);
+                }
                 var outstandingMinor = purchase.TotalAmountMinor - existingAllocatedMinor;
 
                 if (allocation.AmountMinor > outstandingMinor)
@@ -470,9 +490,10 @@ internal sealed class SupplierPaymentService(
                 existingPayableAllocations.TryGetValue(
                     payableId,
                     out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    payable.InitialAmountMinor);
+                if (payable.InitialAmountMinor <= 0)
+                {
+                    return Failed(CreateSupplierPaymentFailureReason.DataIntegrityViolation, command);
+                }
                 var outstandingMinor = payable.InitialAmountMinor - existingAllocatedMinor;
 
                 if (allocation.AmountMinor > outstandingMinor)
@@ -528,17 +549,6 @@ internal sealed class SupplierPaymentService(
         CreateSupplierPaymentCommand command) =>
         CreateSupplierPaymentResult.Failed(failureReason, command.AmountMinor);
 
-    private static void EnsureExistingAllocationsAreValid(
-        long allocatedAmountMinor,
-        long obligationAmountMinor)
-    {
-        if (allocatedAmountMinor < 0 || allocatedAmountMinor > obligationAmountMinor)
-        {
-            throw new InvalidOperationException(
-                "Existing supplier payment allocations exceed the obligation amount.");
-        }
-    }
-
     private IQueryable<SupplierPaymentHeaderProjection> BuildHeaderReadQuery() =>
         from payment in dbContext.SupplierPayments.AsNoTracking()
         join supplier in dbContext.Suppliers.AsNoTracking()
@@ -557,7 +567,7 @@ internal sealed class SupplierPaymentService(
         };
 
     private static bool HasValidAggregate(long amountMinor, long allocatedAmountMinor) =>
-        allocatedAmountMinor >= 0 && allocatedAmountMinor <= amountMinor;
+        amountMinor > 0 && allocatedAmountMinor >= 0 && allocatedAmountMinor <= amountMinor;
 
     private sealed class SupplierPaymentHeaderProjection
     {
@@ -594,7 +604,7 @@ internal sealed class SupplierPaymentService(
 
         public PaymentMethod PaymentMethod { get; init; }
 
-        public long AllocatedAmountMinor { get; init; }
+        public long AllocatedAmountMinor { get; set; }
 
         public string? Observation { get; init; }
     }

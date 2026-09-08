@@ -14,5 +14,6 @@ public enum CreateSupplierPaymentFailureReason
     ObligationNotFound,
     ObligationBelongsToDifferentSupplier,
     AllocationExceedsOutstanding,
-    AllocationsExceedPayment
+    AllocationsExceedPayment,
+    DataIntegrityViolation
 }

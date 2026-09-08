@@ -86,6 +86,8 @@ internal sealed class SupplierAdvanceService(
             }
         }
 
+        // Microsoft.Data.Sqlite starts an IMMEDIATE transaction here: reserve the
+        // writer before reading persisted availability, and keep it until commit.
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
@@ -100,14 +102,18 @@ internal sealed class SupplierAdvanceService(
             return Failed(ApplySupplierAdvanceFailureReason.SourcePaymentNotFound);
         }
 
-        var existingSourceAllocatedMinor = await dbContext.SupplierPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation => allocation.SupplierPaymentId == sourcePayment.Id)
-            .SumAsync(allocation => allocation.AmountMinor, cancellationToken);
-        EnsureExistingAllocationsAreValid(
-            existingSourceAllocatedMinor,
-            sourcePayment.AmountMinor,
-            "supplier payment");
+        if (sourcePayment.AmountMinor <= 0)
+        {
+            return Failed(ApplySupplierAdvanceFailureReason.DataIntegrityViolation);
+        }
+
+        var integrity = await AllocationIntegrity.ReadSupplierAsync(
+            dbContext, purchaseIds, initialPayableIds, sourcePayment.Id, cancellationToken);
+        if (integrity is null)
+        {
+            return Failed(ApplySupplierAdvanceFailureReason.DataIntegrityViolation);
+        }
+        var existingSourceAllocatedMinor = integrity.SourceAllocatedMinor;
         var availableAdvanceMinor = sourcePayment.AmountMinor - existingSourceAllocatedMinor;
 
         if (availableAdvanceMinor == 0)
@@ -153,22 +159,8 @@ internal sealed class SupplierAdvanceService(
             return Failed(ApplySupplierAdvanceFailureReason.ObligationNotFound);
         }
 
-        var existingPurchaseAllocations = await dbContext.SupplierPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.PurchaseId.HasValue && purchaseIds.Contains(allocation.PurchaseId.Value))
-            .GroupBy(allocation => allocation.PurchaseId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
-
-        var existingPayableAllocations = await dbContext.SupplierPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.InitialSupplierPayableId.HasValue
-                && initialPayableIds.Contains(allocation.InitialSupplierPayableId.Value))
-            .GroupBy(allocation => allocation.InitialSupplierPayableId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
+        var existingPurchaseAllocations = integrity.Documents;
+        var existingPayableAllocations = integrity.Initials;
 
         foreach (var allocation in requestedAllocations)
         {
@@ -181,10 +173,10 @@ internal sealed class SupplierAdvanceService(
                 }
 
                 existingPurchaseAllocations.TryGetValue(purchaseId, out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    purchase.TotalAmountMinor,
-                    "purchase");
+                if (purchase.TotalAmountMinor <= 0)
+                {
+                    return Failed(ApplySupplierAdvanceFailureReason.DataIntegrityViolation);
+                }
 
                 if (allocation.AmountMinor > purchase.TotalAmountMinor - existingAllocatedMinor)
                 {
@@ -201,10 +193,10 @@ internal sealed class SupplierAdvanceService(
                 }
 
                 existingPayableAllocations.TryGetValue(payableId, out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    payable.InitialAmountMinor,
-                    "initial supplier payable");
+                if (payable.InitialAmountMinor <= 0)
+                {
+                    return Failed(ApplySupplierAdvanceFailureReason.DataIntegrityViolation);
+                }
 
                 if (allocation.AmountMinor > payable.InitialAmountMinor - existingAllocatedMinor)
                 {
@@ -241,16 +233,4 @@ internal sealed class SupplierAdvanceService(
     private static ApplySupplierAdvanceResult Failed(
         ApplySupplierAdvanceFailureReason failureReason) =>
         ApplySupplierAdvanceResult.Failed(failureReason);
-
-    private static void EnsureExistingAllocationsAreValid(
-        long allocatedAmountMinor,
-        long maximumAmountMinor,
-        string subject)
-    {
-        if (allocatedAmountMinor < 0 || allocatedAmountMinor > maximumAmountMinor)
-        {
-            throw new InvalidOperationException(
-                $"Existing allocations exceed the {subject} amount.");
-        }
-    }
 }
