@@ -15,6 +15,11 @@ internal sealed class InitialSupplierPayableConfiguration
                 "CK_InitialSupplierPayables_InitialAmountMinor_Positive",
                 "\"InitialAmountMinor\" > 0"));
         builder.HasKey(payable => payable.Id);
+        builder.ToTable("InitialSupplierPayables", table =>
+        {
+            table.HasCheckConstraint("CK_InitialSupplierPayables_InitialAmountMinor_IntegerStorage",
+                "typeof(\"InitialAmountMinor\") = 'integer'");
+        });
 
         builder.Property(payable => payable.Reference).IsRequired();
 

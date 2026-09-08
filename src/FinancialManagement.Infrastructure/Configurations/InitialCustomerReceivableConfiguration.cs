@@ -15,6 +15,11 @@ internal sealed class InitialCustomerReceivableConfiguration
                 "CK_InitialCustomerReceivables_InitialAmountMinor_Positive",
                 "\"InitialAmountMinor\" > 0"));
         builder.HasKey(receivable => receivable.Id);
+        builder.ToTable("InitialCustomerReceivables", table =>
+        {
+            table.HasCheckConstraint("CK_InitialCustomerReceivables_InitialAmountMinor_IntegerStorage",
+                "typeof(\"InitialAmountMinor\") = 'integer'");
+        });
 
         builder.Property(receivable => receivable.Reference).IsRequired();
 
