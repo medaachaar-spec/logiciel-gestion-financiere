@@ -2,6 +2,7 @@ using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
 using FinancialManagement.Application.Dashboard;
 using FinancialManagement.Application.Treasury;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinancialManagement.Infrastructure.Dashboard;
@@ -43,6 +44,33 @@ internal sealed class FinancialDashboardService(
                 FinancialDashboardFailureReason.InvalidDateRange);
         }
 
+        // Balance our EF open-reference even if the caller already owns an open connection.
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            var connection = (SqliteConnection)dbContext.Database.GetDbConnection();
+            // The first SELECT establishes the WAL snapshot without reserving a writer lock.
+            await using var transaction = connection.BeginTransaction(deferred: true);
+            await using var attachment = await dbContext.Database.UseTransactionAsync(
+                transaction, cancellationToken);
+            var result = await ReadSnapshotAsync(query, cancellationToken);
+            if (result.Success)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+
+            return result;
+        }
+        finally
+        {
+            await dbContext.Database.CloseConnectionAsync();
+        }
+    }
+
+    private async Task<FinancialDashboardResult> ReadSnapshotAsync(
+        FinancialDashboardQuery query,
+        CancellationToken cancellationToken)
+    {
         var totalSalesMinor = await SumSalesAsync(query, cancellationToken);
         var totalPurchasesMinor = await SumPurchasesAsync(query, cancellationToken);
         var customerCollectionsMinor = await SumCustomerCollectionsAsync(query, cancellationToken);
