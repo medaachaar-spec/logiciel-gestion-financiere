@@ -151,8 +151,10 @@ internal sealed class TreasuryService(
             return TreasurySummaryResult.Failed(TreasurySummaryFailureReason.Forbidden);
         }
 
-        await using var transaction = await dbContext.Database
-            .BeginTransactionAsync(cancellationToken);
+        // A composed Dashboard read owns its transaction; only manage our standalone one.
+        await using var transaction = dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
 
         await EnsurePersistedEnumsAreValidAsync(cancellationToken);
 
@@ -208,7 +210,10 @@ internal sealed class TreasuryService(
             totalTreasuryMinor = cashBalanceMinor + bankBalanceMinor;
         }
 
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+        }
 
         return TreasurySummaryResult.Succeeded(
             opening is not null,
