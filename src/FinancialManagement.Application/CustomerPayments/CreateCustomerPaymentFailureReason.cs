@@ -14,5 +14,6 @@ public enum CreateCustomerPaymentFailureReason
     ObligationNotFound,
     ObligationBelongsToDifferentClient,
     AllocationExceedsOutstanding,
-    AllocationsExceedPayment
+    AllocationsExceedPayment,
+    DataIntegrityViolation
 }

@@ -417,7 +417,7 @@ public sealed class AdvanceServiceTests
     }
 
     [Fact]
-    public async Task Corrupted_customer_source_allocation_raises_technical_error()
+    public async Task Corrupted_customer_source_allocation_returns_integrity_failure()
     {
         using var database = new AdvanceTestDatabase();
         var user = database.AddUser("customer-source-corruption", UserRole.Responsable);
@@ -431,15 +431,16 @@ public sealed class AdvanceServiceTests
             CustomerSaleAllocation(oldTarget.Id, 150));
         await database.AuthenticateAsync(user);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            database.CustomerAdvanceService.ApplyAsync(
-                CustomerCommand(source.Id, CustomerSaleAllocation(newTarget.Id, 1))));
+        var result = await database.CustomerAdvanceService.ApplyAsync(
+                CustomerCommand(source.Id, CustomerSaleAllocation(newTarget.Id, 1)));
+        Assert.False(result.Success);
+        Assert.Equal(ApplyCustomerAdvanceFailureReason.DataIntegrityViolation, result.FailureReason);
 
         Assert.Single(database.Context.CustomerPaymentAllocations);
     }
 
     [Fact]
-    public async Task Corrupted_customer_target_allocation_raises_technical_error()
+    public async Task Corrupted_customer_target_allocation_returns_integrity_failure()
     {
         using var database = new AdvanceTestDatabase();
         var user = database.AddUser("customer-target-corruption", UserRole.Responsable);
@@ -452,9 +453,10 @@ public sealed class AdvanceServiceTests
         var source = database.AddCustomerPayment(user, client, 100);
         await database.AuthenticateAsync(user);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            database.CustomerAdvanceService.ApplyAsync(
-                CustomerCommand(source.Id, CustomerSaleAllocation(target.Id, 1))));
+        var result = await database.CustomerAdvanceService.ApplyAsync(
+                CustomerCommand(source.Id, CustomerSaleAllocation(target.Id, 1)));
+        Assert.False(result.Success);
+        Assert.Equal(ApplyCustomerAdvanceFailureReason.DataIntegrityViolation, result.FailureReason);
 
         Assert.Single(database.Context.CustomerPaymentAllocations);
     }
@@ -876,7 +878,7 @@ public sealed class AdvanceServiceTests
     }
 
     [Fact]
-    public async Task Corrupted_supplier_source_allocation_raises_technical_error()
+    public async Task Corrupted_supplier_source_allocation_returns_integrity_failure()
     {
         using var database = new AdvanceTestDatabase();
         var user = database.AddUser("supplier-source-corruption", UserRole.Responsable);
@@ -890,15 +892,16 @@ public sealed class AdvanceServiceTests
             SupplierPurchaseAllocation(oldTarget.Id, 150));
         await database.AuthenticateAsync(user);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            database.SupplierAdvanceService.ApplyAsync(
-                SupplierCommand(source.Id, SupplierPurchaseAllocation(newTarget.Id, 1))));
+        var result = await database.SupplierAdvanceService.ApplyAsync(
+                SupplierCommand(source.Id, SupplierPurchaseAllocation(newTarget.Id, 1)));
+        Assert.False(result.Success);
+        Assert.Equal(ApplySupplierAdvanceFailureReason.DataIntegrityViolation, result.FailureReason);
 
         Assert.Single(database.Context.SupplierPaymentAllocations);
     }
 
     [Fact]
-    public async Task Corrupted_supplier_target_allocation_raises_technical_error()
+    public async Task Corrupted_supplier_target_allocation_returns_integrity_failure()
     {
         using var database = new AdvanceTestDatabase();
         var user = database.AddUser("supplier-target-corruption", UserRole.Responsable);
@@ -911,9 +914,10 @@ public sealed class AdvanceServiceTests
         var source = database.AddSupplierPayment(user, supplier, 100);
         await database.AuthenticateAsync(user);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            database.SupplierAdvanceService.ApplyAsync(
-                SupplierCommand(source.Id, SupplierPurchaseAllocation(target.Id, 1))));
+        var result = await database.SupplierAdvanceService.ApplyAsync(
+                SupplierCommand(source.Id, SupplierPurchaseAllocation(target.Id, 1)));
+        Assert.False(result.Success);
+        Assert.Equal(ApplySupplierAdvanceFailureReason.DataIntegrityViolation, result.FailureReason);
 
         Assert.Single(database.Context.SupplierPaymentAllocations);
     }

@@ -143,7 +143,8 @@ internal sealed class DatabaseBackupService(
                 knownMigrations,
                 requireCurrentSchema: true,
                 requireActiveResponsible: true,
-                cancellationToken);
+                cancellationToken,
+                requireAllocationIntegrity: true);
 
             if (!migratedValidation.IsValid)
             {
@@ -217,7 +218,8 @@ internal sealed class DatabaseBackupService(
                 knownMigrations,
                 requireCurrentSchema: true,
                 requireActiveResponsible: true,
-                CancellationToken.None);
+                CancellationToken.None,
+                requireAllocationIntegrity: true);
 
             if (!postSwapValidation.IsValid)
             {
@@ -485,7 +487,8 @@ internal sealed class DatabaseBackupService(
         IReadOnlyList<string> knownMigrations,
         bool requireCurrentSchema,
         bool requireActiveResponsible,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireAllocationIntegrity = false)
     {
         try
         {
@@ -544,6 +547,30 @@ internal sealed class DatabaseBackupService(
             {
                 logger?.LogWarning("The database schema does not match migration {MigrationId}.", appliedMigrations[^1]);
                 return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+            }
+
+            if (requireAllocationIntegrity)
+            {
+                // A structurally valid backup may still contain impossible sums.
+                // Validate the complete staged/current database without repairing it.
+                var validationOptions = new DbContextOptionsBuilder<FinancialManagementDbContext>()
+                    .UseSqlite(connection).Options;
+                await using var validationContext = new FinancialManagementDbContext(validationOptions);
+                var saleIds = (await validationContext.Sales.Select(item => item.Id)
+                    .ToListAsync(cancellationToken)).ToHashSet();
+                var receivableIds = (await validationContext.InitialCustomerReceivables.Select(item => item.Id)
+                    .ToListAsync(cancellationToken)).ToHashSet();
+                var purchaseIds = (await validationContext.Purchases.Select(item => item.Id)
+                    .ToListAsync(cancellationToken)).ToHashSet();
+                var payableIds = (await validationContext.InitialSupplierPayables.Select(item => item.Id)
+                    .ToListAsync(cancellationToken)).ToHashSet();
+                if (await AllocationIntegrity.ReadCustomerAsync(validationContext, saleIds, receivableIds,
+                        null, cancellationToken) is null
+                    || await AllocationIntegrity.ReadSupplierAsync(validationContext, purchaseIds, payableIds,
+                        null, cancellationToken) is null)
+                {
+                    return DatabaseValidation.Invalid(DatabaseBackupFailureReason.InvalidBackup);
+                }
             }
 
             if (requireActiveResponsible)

@@ -79,10 +79,7 @@ internal sealed class SupplierPaymentObligationLookupService(
                 Reference = purchase.Reference,
                 BusinessDate = purchase.PurchaseDate,
                 DueDate = purchase.DueDate,
-                OriginalAmountMinor = purchase.TotalAmountMinor,
-                AllocatedAmountMinor = dbContext.SupplierPaymentAllocations
-                    .Where(allocation => allocation.PurchaseId == purchase.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0
+                OriginalAmountMinor = purchase.TotalAmountMinor
             })
             .ToListAsync(cancellationToken);
 
@@ -102,14 +99,23 @@ internal sealed class SupplierPaymentObligationLookupService(
                 Reference = payable.Reference,
                 BusinessDate = payable.PayableDate,
                 DueDate = payable.DueDate,
-                OriginalAmountMinor = payable.InitialAmountMinor,
-                AllocatedAmountMinor = dbContext.SupplierPaymentAllocations
-                    .Where(allocation => allocation.InitialSupplierPayableId == payable.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0
+                OriginalAmountMinor = payable.InitialAmountMinor
             })
             .ToListAsync(cancellationToken);
 
         var obligations = purchaseObligations.Concat(payableObligations).ToList();
+        var integrity = await AllocationIntegrity.ReadSupplierAsync(
+            dbContext, purchaseObligations.Select(item => item.TargetId).ToHashSet(),
+            payableObligations.Select(item => item.TargetId).ToHashSet(), null, cancellationToken);
+        if (integrity is null)
+            return Failed(query, SupplierPaymentObligationLookupFailureReason.DataIntegrityViolation);
+        foreach (var obligation in obligations)
+        {
+            var totals = obligation.TargetType == SupplierPaymentObligationTargetType.Purchase
+                ? integrity.Documents : integrity.Initials;
+            obligation.AllocatedAmountMinor = totals.GetValueOrDefault(obligation.TargetId);
+        }
+
         if (obligations.Any(HasInvalidAggregate))
         {
             return Failed(query, SupplierPaymentObligationLookupFailureReason.DataIntegrityViolation);
@@ -140,7 +146,8 @@ internal sealed class SupplierPaymentObligationLookupService(
         SupplierPaymentObligationLookupResult.Failed(query, failureReason);
 
     private static bool HasInvalidAggregate(ObligationProjection obligation) =>
-        obligation.AllocatedAmountMinor < 0
+        obligation.OriginalAmountMinor <= 0
+        || obligation.AllocatedAmountMinor < 0
         || obligation.AllocatedAmountMinor > obligation.OriginalAmountMinor;
 
     private sealed class ObligationProjection
@@ -157,6 +164,6 @@ internal sealed class SupplierPaymentObligationLookupService(
 
         public long OriginalAmountMinor { get; init; }
 
-        public long AllocatedAmountMinor { get; init; }
+        public long AllocatedAmountMinor { get; set; }
     }
 }

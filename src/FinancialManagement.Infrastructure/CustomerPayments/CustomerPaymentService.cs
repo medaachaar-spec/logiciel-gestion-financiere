@@ -117,12 +117,28 @@ internal sealed class CustomerPaymentService(
                 ClientName = payment.ClientName,
                 AmountMinor = payment.AmountMinor,
                 PaymentMethod = payment.PaymentMethod,
-                AllocatedAmountMinor = dbContext.CustomerPaymentAllocations
-                    .Where(allocation => allocation.CustomerPaymentId == payment.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0,
                 Observation = payment.Observation
             })
             .ToListAsync(cancellationToken);
+
+        var pageById = page.ToDictionary(payment => payment.Id);
+        var pageIds = pageById.Keys.ToArray();
+        var storedAmounts = await dbContext.CustomerPaymentAllocations.AsNoTracking()
+            .Where(allocation => pageIds.Contains(allocation.CustomerPaymentId))
+            .Select(allocation => new { PaymentId = allocation.CustomerPaymentId, allocation.AmountMinor })
+            .ToListAsync(cancellationToken);
+        var totals = new Dictionary<long, long>();
+        foreach (var allocation in storedAmounts)
+        {
+            if (!AllocationIntegrity.TryAccumulate(totals, allocation.PaymentId,
+                    allocation.AmountMinor, pageById[allocation.PaymentId].AmountMinor))
+            {
+                return CustomerPaymentListResult.Failed(
+                    query, CustomerPaymentListFailureReason.DataIntegrityViolation);
+            }
+        }
+        foreach (var payment in page)
+            payment.AllocatedAmountMinor = totals.GetValueOrDefault(payment.Id);
 
         if (page.Any(payment =>
                 !HasValidParty(payment.ClientId, payment.ClientName)
@@ -254,6 +270,14 @@ internal sealed class CustomerPaymentService(
                     CustomerPaymentDetailFailureReason.DataIntegrityViolation);
             }
 
+            if (allocation.AllocatedAmountMinor <= 0
+                || payment.AmountMinor <= 0
+                || allocation.AllocatedAmountMinor > payment.AmountMinor - allocatedAmountMinor)
+            {
+                return CustomerPaymentDetailResult.Failed(
+                    CustomerPaymentDetailFailureReason.DataIntegrityViolation);
+            }
+
             allocatedAmountMinor = checked(allocatedAmountMinor + allocation.AllocatedAmountMinor);
             allocations.Add(item);
         }
@@ -369,6 +393,11 @@ internal sealed class CustomerPaymentService(
             }
         }
 
+        // Microsoft.Data.Sqlite starts an IMMEDIATE transaction here: reserve the
+        // writer before reading persisted availability, and keep it until commit.
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken);
+
         var clientExists = await dbContext.Clients
             .AsNoTracking()
             .AnyAsync(client => client.Id == command.ClientId, cancellationToken);
@@ -381,9 +410,6 @@ internal sealed class CustomerPaymentService(
         var createdAtUtc = timeProvider.GetUtcNow();
         var localDateTime = TimeZoneInfo.ConvertTime(createdAtUtc, timeProvider.LocalTimeZone);
         var businessDate = DateOnly.FromDateTime(localDateTime.DateTime);
-
-        await using var transaction = await dbContext.Database
-            .BeginTransactionAsync(cancellationToken);
 
         var sales = await dbContext.Sales
             .AsNoTracking()
@@ -407,22 +433,15 @@ internal sealed class CustomerPaymentService(
             return Failed(CreateCustomerPaymentFailureReason.ObligationNotFound, command);
         }
 
-        var existingSaleAllocations = await dbContext.CustomerPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.SaleId.HasValue && saleIds.Contains(allocation.SaleId.Value))
-            .GroupBy(allocation => allocation.SaleId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
+        var integrity = await AllocationIntegrity.ReadCustomerAsync(
+            dbContext, saleIds, initialReceivableIds, null, cancellationToken);
+        if (integrity is null)
+        {
+            return Failed(CreateCustomerPaymentFailureReason.DataIntegrityViolation, command);
+        }
 
-        var existingReceivableAllocations = await dbContext.CustomerPaymentAllocations
-            .AsNoTracking()
-            .Where(allocation =>
-                allocation.InitialCustomerReceivableId.HasValue
-                && initialReceivableIds.Contains(allocation.InitialCustomerReceivableId.Value))
-            .GroupBy(allocation => allocation.InitialCustomerReceivableId!.Value)
-            .Select(group => new { Id = group.Key, AmountMinor = group.Sum(item => item.AmountMinor) })
-            .ToDictionaryAsync(item => item.Id, item => item.AmountMinor, cancellationToken);
+        var existingSaleAllocations = integrity.Documents;
+        var existingReceivableAllocations = integrity.Initials;
 
         foreach (var allocation in requestedAllocations)
         {
@@ -437,7 +456,10 @@ internal sealed class CustomerPaymentService(
                 }
 
                 existingSaleAllocations.TryGetValue(saleId, out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(existingAllocatedMinor, sale.TotalAmountMinor);
+                if (sale.TotalAmountMinor <= 0)
+                {
+                    return Failed(CreateCustomerPaymentFailureReason.DataIntegrityViolation, command);
+                }
                 var outstandingMinor = sale.TotalAmountMinor - existingAllocatedMinor;
 
                 if (allocation.AmountMinor > outstandingMinor)
@@ -461,9 +483,10 @@ internal sealed class CustomerPaymentService(
                 existingReceivableAllocations.TryGetValue(
                     receivableId,
                     out var existingAllocatedMinor);
-                EnsureExistingAllocationsAreValid(
-                    existingAllocatedMinor,
-                    receivable.InitialAmountMinor);
+                if (receivable.InitialAmountMinor <= 0)
+                {
+                    return Failed(CreateCustomerPaymentFailureReason.DataIntegrityViolation, command);
+                }
                 var outstandingMinor = receivable.InitialAmountMinor - existingAllocatedMinor;
 
                 if (allocation.AmountMinor > outstandingMinor)
@@ -519,17 +542,6 @@ internal sealed class CustomerPaymentService(
         CreateCustomerPaymentCommand command) =>
         CreateCustomerPaymentResult.Failed(failureReason, command.AmountMinor);
 
-    private static void EnsureExistingAllocationsAreValid(
-        long allocatedAmountMinor,
-        long obligationAmountMinor)
-    {
-        if (allocatedAmountMinor < 0 || allocatedAmountMinor > obligationAmountMinor)
-        {
-            throw new InvalidOperationException(
-                "Existing customer payment allocations exceed the obligation amount.");
-        }
-    }
-
     private IQueryable<CustomerPaymentHeaderProjection> BuildHeaderReadQuery() =>
         from payment in dbContext.CustomerPayments.AsNoTracking()
         join client in dbContext.Clients.AsNoTracking()
@@ -551,7 +563,7 @@ internal sealed class CustomerPaymentService(
         clientId is null || clientName is not null;
 
     private static bool HasValidAggregate(long amountMinor, long allocatedAmountMinor) =>
-        allocatedAmountMinor >= 0 && allocatedAmountMinor <= amountMinor;
+        amountMinor > 0 && allocatedAmountMinor >= 0 && allocatedAmountMinor <= amountMinor;
 
     private sealed class CustomerPaymentHeaderProjection
     {
@@ -588,7 +600,7 @@ internal sealed class CustomerPaymentService(
 
         public PaymentMethod PaymentMethod { get; init; }
 
-        public long AllocatedAmountMinor { get; init; }
+        public long AllocatedAmountMinor { get; set; }
 
         public string? Observation { get; init; }
     }
