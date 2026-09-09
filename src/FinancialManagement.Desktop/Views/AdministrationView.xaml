@@ -150,6 +150,11 @@
                         <views:InitialObligationView xmlns:views="clr-namespace:FinancialManagement.Desktop.Views"
                                                      Margin="10" DataContext="{Binding SupplierPayables}" />
                     </TabItem>
+
+                    <TabItem Header="Sauvegardes">
+                        <views:BackupView xmlns:views="clr-namespace:FinancialManagement.Desktop.Views"
+                                          Margin="10" DataContext="{Binding Backups}" />
+                    </TabItem>
                 </TabControl>
             </Grid>
         </Border>

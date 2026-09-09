@@ -1,4 +1,5 @@
 using System.Data.Common;
+using FinancialManagement.Application.Backup;
 using FinancialManagement.Infrastructure;
 using FinancialManagement.Infrastructure.Backup;
 using FinancialManagement.Infrastructure.Migrations;
@@ -192,7 +193,9 @@ public sealed class FinancialStorageIntegrityTests
         await using var db = new FinancialStorageTestDatabase();
         if (legacy) await db.LegacyAsync();
         var before = legacy ? await db.ValuesAsync() : [];
-        await FinancialDatabaseStartup.InitializeAsync(db.Context);
+        await FinancialDatabaseStartup.InitializeAsync(
+            db.Context,
+            new StorageStartupBackupService(db.Path));
         Assert.Equal(db.Migrations, await db.Context.Database.GetAppliedMigrationsAsync());
         if (legacy) Assert.Equal(before, await db.ValuesAsync());
         else
@@ -217,7 +220,10 @@ public sealed class FinancialStorageIntegrityTests
             await db.UpdateAsync(table, column, value, bypassChecks: hardened);
             var before = await db.ValuesAsync();
             var history = (await db.Context.Database.GetAppliedMigrationsAsync()).ToArray();
-            await Assert.ThrowsAsync<FinancialStorageIntegrityException>(() => FinancialDatabaseStartup.InitializeAsync(db.Context));
+            await Assert.ThrowsAsync<FinancialStorageIntegrityException>(() =>
+                FinancialDatabaseStartup.InitializeAsync(
+                    db.Context,
+                    new StorageStartupBackupService(db.Path)));
             Assert.Equal(before, await db.ValuesAsync());
             Assert.Equal(history, await db.Context.Database.GetAppliedMigrationsAsync());
         }
@@ -231,7 +237,10 @@ public sealed class FinancialStorageIntegrityTests
         await using var db = new FinancialStorageTestDatabase();
         await db.Context.GetService<IMigrator>().MigrateAsync(db.Migrations[2]);
         await db.Context.Database.ExecuteSqlRawAsync(fault);
-        await Assert.ThrowsAsync<FinancialStorageIntegrityException>(() => FinancialDatabaseStartup.InitializeAsync(db.Context));
+        await Assert.ThrowsAsync<FinancialStorageIntegrityException>(() =>
+            FinancialDatabaseStartup.InitializeAsync(
+                db.Context,
+                new StorageStartupBackupService(db.Path)));
     }
 
     [Fact]
@@ -270,6 +279,29 @@ public sealed class FinancialStorageIntegrityTests
     private sealed class UnexpectedRawMigration : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder) => migrationBuilder.Sql("SELECT 1;");
+    }
+
+    private sealed class StorageStartupBackupService(string databasePath) : IStartupDatabaseBackupService
+    {
+        private static readonly DateOnly TestDate = new(2026, 1, 1);
+
+        public Task<StartupDatabaseBackupResult> CreatePreMigrationBackupAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var backupPath = databasePath + ".fmbak";
+            File.WriteAllText(backupPath, "Financial storage startup test artifact");
+            return Task.FromResult(StartupDatabaseBackupResult.Succeeded(backupPath, TestDate));
+        }
+
+        public Task<StartupDatabaseBackupResult> CreateDailyBackupIfNeededAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(StartupDatabaseBackupResult.Failed(
+                DatabaseBackupFailureReason.StorageFailure,
+                TestDate));
+        }
     }
 
     private sealed class FailDuringRebuild : DbCommandInterceptor

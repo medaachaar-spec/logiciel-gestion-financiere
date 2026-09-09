@@ -323,7 +323,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel>
-                                        <TextBlock Text="Employé concerné (facultatif)"
+                                        <TextBlock Text="{Binding EmployeeFieldLabel}"
                                                    Style="{StaticResource FieldLabelTextStyle}" />
                                         <TextBlock Text="{Binding EmployeeSelectionDescription}"
                                                    Margin="0,4,0,0"

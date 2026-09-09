@@ -9,6 +9,7 @@ public enum CreateExpenseFailureReason
     InvalidPaymentMethod,
     ExpenseCategoryNotFound,
     ExpenseCategoryInactive,
+    ConcernedEmployeeRequired,
     ConcernedEmployeeNotFound,
     ConcernedEmployeeNotEligible
 }

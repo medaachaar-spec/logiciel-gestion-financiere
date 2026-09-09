@@ -18,13 +18,130 @@ internal sealed class DatabaseBackupService(
     DatabaseMaintenanceLock maintenanceLock,
     DatabaseRestoreTestHook restoreTestHook,
     TimeProvider timeProvider,
-    ILogger<DatabaseBackupService>? logger = null) : IDatabaseBackupService
+    ILogger<DatabaseBackupService>? logger = null) : IDatabaseBackupService, IStartupDatabaseBackupService
 {
     private const string MigrationHistoryTable = "__EFMigrationsHistory";
 
     public Task<CreateDatabaseBackupResult> CreateLocalBackupAsync(
         CancellationToken cancellationToken = default) =>
         CreateBackupAsync(options.LocalBackupDirectory, createDirectory: true, "Backup", cancellationToken);
+
+    public Task<StartupDatabaseBackupResult> CreatePreMigrationBackupAsync(
+        CancellationToken cancellationToken = default) =>
+        CreateStartupBackupAsync("PreMigration", requireCurrentSchema: false, cancellationToken);
+
+    public async Task<StartupDatabaseBackupResult> CreateDailyBackupIfNeededAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var localBusinessDate = GetLocalBusinessDate();
+        await maintenanceLock.Semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            Directory.CreateDirectory(options.LocalBackupDirectory);
+            var guardPath = Path.Combine(
+                options.LocalBackupDirectory,
+                $".daily-backup-{localBusinessDate:yyyyMMdd}.guard");
+            using var dailyGuard = new FileStream(
+                guardPath,
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                bufferSize: 1,
+                FileOptions.WriteThrough);
+            var pattern = $"FinancialManagement_Daily_{localBusinessDate:yyyyMMdd}_*{DatabaseBackupArtifact.Extension}";
+            var knownMigrations = dbContext.Database.GetMigrations().ToArray();
+            foreach (var candidatePath in Directory.EnumerateFiles(
+                         options.LocalBackupDirectory,
+                         pattern,
+                         SearchOption.TopDirectoryOnly)
+                     .OrderByDescending(path => path, StringComparer.OrdinalIgnoreCase))
+            {
+                if (await IsValidCurrentDailyArtifactAsync(
+                        candidatePath,
+                        knownMigrations,
+                        cancellationToken))
+                {
+                    return StartupDatabaseBackupResult.AlreadyExists(
+                        Path.GetFullPath(candidatePath),
+                        localBusinessDate);
+                }
+            }
+
+            var result = await CreateArtifactBackupAsync(
+                options.LocalBackupDirectory,
+                $"Daily_{localBusinessDate:yyyyMMdd}",
+                requireActiveResponsible: false,
+                cancellationToken);
+            return ToStartupResult(result, localBusinessDate);
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or SqliteException
+            or InvalidOperationException)
+        {
+            logger?.LogWarning(exception, "The automatic daily database backup could not be created.");
+            return StartupDatabaseBackupResult.Failed(
+                DatabaseBackupFailureReason.StorageFailure,
+                localBusinessDate);
+        }
+        finally
+        {
+            maintenanceLock.Semaphore.Release();
+        }
+    }
+
+    private async Task<bool> IsValidCurrentDailyArtifactAsync(
+        string artifactPath,
+        IReadOnlyList<string> knownMigrations,
+        CancellationToken cancellationToken)
+    {
+        string? stagingPath = null;
+        try
+        {
+            stagingPath = CreateUnusedPath(options.LocalBackupDirectory, "DailyValidation");
+            var artifactFailure = await DatabaseBackupArtifact.ExtractAsync(
+                artifactPath,
+                stagingPath,
+                cancellationToken);
+            if (artifactFailure is not DatabaseBackupFailureReason.None)
+            {
+                logger?.LogWarning(
+                    "Daily backup artifact {BackupPath} failed artifact validation and will not satisfy today's backup requirement.",
+                    artifactPath);
+                return false;
+            }
+
+            var databaseValidation = await ValidateDatabaseAsync(
+                stagingPath,
+                knownMigrations,
+                requireCurrentSchema: true,
+                requireActiveResponsible: false,
+                cancellationToken);
+            if (!databaseValidation.IsValid)
+            {
+                logger?.LogWarning(
+                    "Daily backup artifact {BackupPath} failed database validation and will not satisfy today's backup requirement.",
+                    artifactPath);
+            }
+
+            return databaseValidation.IsValid;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or SqliteException
+            or InvalidOperationException)
+        {
+            logger?.LogWarning(
+                exception,
+                "Daily backup artifact {BackupPath} could not be validated and will not satisfy today's backup requirement.",
+                artifactPath);
+            return false;
+        }
+        finally
+        {
+            DeleteDatabaseFilesBestEffort(stagingPath);
+        }
+    }
 
     public Task<CreateDatabaseBackupResult> CreateExternalBackupAsync(
         CreateExternalDatabaseBackupCommand command,
@@ -360,12 +477,47 @@ internal sealed class DatabaseBackupService(
         }
     }
 
+    private async Task<StartupDatabaseBackupResult> CreateStartupBackupAsync(
+        string nameKind,
+        bool requireCurrentSchema,
+        CancellationToken cancellationToken)
+    {
+        var localBusinessDate = GetLocalBusinessDate();
+        await maintenanceLock.Semaphore.WaitAsync(cancellationToken);
+        try
+        {
+            Directory.CreateDirectory(options.LocalBackupDirectory);
+            var result = await CreateArtifactBackupAsync(
+                options.LocalBackupDirectory,
+                nameKind,
+                requireActiveResponsible: false,
+                cancellationToken,
+                requireCurrentSchema: requireCurrentSchema);
+            return ToStartupResult(result, localBusinessDate);
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or SqliteException
+            or InvalidOperationException)
+        {
+            logger?.LogWarning(exception, "The {BackupKind} database backup could not be created.", nameKind);
+            return StartupDatabaseBackupResult.Failed(
+                DatabaseBackupFailureReason.StorageFailure,
+                localBusinessDate);
+        }
+        finally
+        {
+            maintenanceLock.Semaphore.Release();
+        }
+    }
+
     private async Task<CreateDatabaseBackupResult> CreateArtifactBackupAsync(
         string destinationDirectory,
         string nameKind,
         bool requireActiveResponsible,
         CancellationToken cancellationToken,
-        Func<DatabaseBackupFailureReason>? validateBeforePublication = null)
+        Func<DatabaseBackupFailureReason>? validateBeforePublication = null,
+        bool requireCurrentSchema = true)
     {
         var createdAtUtc = timeProvider.GetUtcNow();
         var token = Guid.NewGuid().ToString("N");
@@ -385,7 +537,7 @@ internal sealed class DatabaseBackupService(
                 return CreateDatabaseBackupResult.Failed(DatabaseBackupFailureReason.InvalidBackup);
             File.Move(snapshotPath, databasePath);
             var validation = await ValidateDatabaseAsync(databasePath, dbContext.Database.GetMigrations().ToArray(),
-                requireCurrentSchema: true, requireActiveResponsible, cancellationToken);
+                requireCurrentSchema, requireActiveResponsible, cancellationToken);
             if (!validation.IsValid)
                 return CreateDatabaseBackupResult.Failed(validation.FailureReason);
             await CheckpointAndCloseAsync(databasePath, cancellationToken);
@@ -416,6 +568,21 @@ internal sealed class DatabaseBackupService(
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
         }
     }
+
+    private DateOnly GetLocalBusinessDate()
+    {
+        var localDateTime = TimeZoneInfo.ConvertTime(
+            timeProvider.GetUtcNow(),
+            timeProvider.LocalTimeZone);
+        return DateOnly.FromDateTime(localDateTime.DateTime);
+    }
+
+    private static StartupDatabaseBackupResult ToStartupResult(
+        CreateDatabaseBackupResult result,
+        DateOnly localBusinessDate) =>
+        result.Success && result.BackupPath is not null
+            ? StartupDatabaseBackupResult.Succeeded(result.BackupPath, localBusinessDate)
+            : StartupDatabaseBackupResult.Failed(result.FailureReason, localBusinessDate);
 
     private DatabaseBackupFailureReason ValidateMaintenanceAuthorization(
         long? initiatingUserId,

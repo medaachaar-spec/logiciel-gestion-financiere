@@ -53,7 +53,8 @@ public sealed class AdministrationViewModel : ViewModelBase
         IAuthenticationService authenticationService,
         DashboardOperationCoordinator operationCoordinator,
         InitialCustomerReceivablesViewModel customerReceivables,
-        InitialSupplierPayablesViewModel supplierPayables)
+        InitialSupplierPayablesViewModel supplierPayables,
+        BackupViewModel backups)
     {
         ArgumentNullException.ThrowIfNull(administrationService);
         ArgumentNullException.ThrowIfNull(currentUserSession);
@@ -61,14 +62,17 @@ public sealed class AdministrationViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(operationCoordinator);
         ArgumentNullException.ThrowIfNull(customerReceivables);
         ArgumentNullException.ThrowIfNull(supplierPayables);
+        ArgumentNullException.ThrowIfNull(backups);
         _administrationService = administrationService;
         _currentUserSession = currentUserSession;
         _authenticationService = authenticationService;
         _operationCoordinator = operationCoordinator;
         CustomerReceivables = customerReceivables;
         SupplierPayables = supplierPayables;
+        Backups = backups;
         CustomerReceivables.AuthenticationInvalidated += Child_AuthenticationInvalidated;
         SupplierPayables.AuthenticationInvalidated += Child_AuthenticationInvalidated;
+        Backups.AuthenticationInvalidated += Child_AuthenticationInvalidated;
 
         foreach (var module in Enum.GetValues<PermissionModule>())
         {
@@ -131,6 +135,8 @@ public sealed class AdministrationViewModel : ViewModelBase
     public InitialCustomerReceivablesViewModel CustomerReceivables { get; }
 
     public InitialSupplierPayablesViewModel SupplierPayables { get; }
+
+    public BackupViewModel Backups { get; }
 
     public ICommand RefreshCommand { get; }
 
@@ -376,6 +382,7 @@ public sealed class AdministrationViewModel : ViewModelBase
     public Task LoadAsync(CancellationToken cancellationToken = default)
     {
         Reactivate();
+        Backups.Activate();
         return _hasLoaded ? Task.CompletedTask : Track(LoadUsersAsync(cancellationToken));
     }
 
@@ -387,6 +394,7 @@ public sealed class AdministrationViewModel : ViewModelBase
         _lifetimeCancellation.Cancel();
         CustomerReceivables.Deactivate();
         SupplierPayables.Deactivate();
+        Backups.Deactivate();
         CloseAllOverlays();
         ClearProtectedData();
         RaiseCommandCanExecuteChanged();
@@ -400,7 +408,8 @@ public sealed class AdministrationViewModel : ViewModelBase
             await Task.WhenAll(
                 _pendingOperation,
                 CustomerReceivables.StopAsync(),
-                SupplierPayables.StopAsync());
+                SupplierPayables.StopAsync(),
+                Backups.StopAsync());
         }
         catch (OperationCanceledException)
         {

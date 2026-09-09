@@ -373,6 +373,40 @@ public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task Restore_AcceptsActualPreMigrationArtifactPreservesDataAndReachesCurrentSchema()
+    {
+        await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        var migrations = fixture.Context.Database.GetMigrations().ToArray();
+        await fixture.Context.GetService<IMigrator>().MigrateAsync(migrations[2]);
+        fixture.Context.Clients.Add(NewClient("PreMigration data"));
+        await fixture.Context.SaveChangesAsync();
+
+        var startup = await FinancialDatabaseStartup.InitializeAsync(
+            fixture.Context,
+            fixture.Services.GetRequiredService<IStartupDatabaseBackupService>());
+        var artifactPath = Assert.IsType<string>(startup.PreMigrationBackupPath);
+        var artifactHash = await HashFileAsync(artifactPath);
+        fixture.Context.Clients.Add(NewClient("Post-backup marker"));
+        await fixture.Context.SaveChangesAsync();
+
+        var restore = await fixture.Service.RestoreAsync(new(artifactPath));
+
+        Assert.True(restore.Success);
+        Assert.True(restore.RestartRequired);
+        Assert.False(fixture.Session.IsAuthenticated);
+        Assert.Equal(artifactHash, await HashFileAsync(artifactPath));
+        Assert.Equal(4L, await ScalarLongAsync(
+            fixture.LivePath,
+            "SELECT COUNT(*) FROM __EFMigrationsHistory;"));
+        Assert.Equal(1L, await ScalarLongAsync(
+            fixture.LivePath,
+            "SELECT COUNT(*) FROM Clients WHERE Name='PreMigration data';"));
+        Assert.Equal(0L, await ScalarLongAsync(
+            fixture.LivePath,
+            "SELECT COUNT(*) FROM Clients WHERE Name='Post-backup marker';"));
+    }
+
+    [Fact]
     public async Task Restore_RejectsVersion002WhoseDataCannotSatisfyMigration003()
     {
         await using var fixture = await BackupFixture.CreateAsync(authenticate: true);

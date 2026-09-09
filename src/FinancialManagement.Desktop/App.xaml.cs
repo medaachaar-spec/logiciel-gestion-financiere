@@ -3,6 +3,7 @@ using System.Windows;
 using System.Diagnostics;
 using System.IO;
 using FinancialManagement.Application.Authentication;
+using FinancialManagement.Application.Backup;
 using FinancialManagement.Application.Initialization;
 using FinancialManagement.Desktop.Configuration;
 using FinancialManagement.Desktop.Services;
@@ -24,6 +25,7 @@ public partial class App : System.Windows.Application
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         ServiceProvider serviceProvider;
+        FinancialDatabaseStartupResult startupResult;
 
         try
         {
@@ -37,16 +39,26 @@ public partial class App : System.Windows.Application
 
             serviceProvider = BuildServiceProvider(paths, connectionString);
             _serviceProvider = serviceProvider;
-            await MigrateDatabaseAsync(serviceProvider);
+            startupResult = await MigrateDatabaseAsync(serviceProvider);
+            if (startupResult.DailyBackup is { Success: false } dailyBackup)
+            {
+                Trace.TraceWarning(
+                    "Automatic daily backup failed for business date {0}: {1}.",
+                    dailyBackup.LocalBusinessDate,
+                    dailyBackup.FailureReason);
+            }
         }
         catch (Exception exception)
         {
             Trace.TraceError("Application data initialization failed: {0}", exception);
+            if (exception is DatabaseMigrationWithBackupException migrationFailure)
+            {
+                Trace.TraceError(
+                    "Migration recovery backup is available at {0}.",
+                    migrationFailure.RecoveryBackupPath);
+            }
             MessageBox.Show(
-                exception is FinancialStorageIntegrityException
-                    ? "La base de données contient des données financières dans un format invalide. "
-                        + "Le démarrage a été bloqué afin d’éviter une altération des montants."
-                    : "Impossible d'initialiser les données de l'application.",
+                GetDataInitializationErrorMessage(exception),
                 "Démarrage impossible",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
@@ -77,6 +89,17 @@ public partial class App : System.Windows.Application
                 }
 
                 var currentUserSession = serviceProvider.GetRequiredService<ICurrentUserSession>();
+                if (startupResult.DailyBackup is { Success: false } &&
+                    currentUserSession.Role == UserRole.Responsable)
+                {
+                    MessageBox.Show(
+                        "La sauvegarde automatique du jour n'a pas pu être créée. "
+                            + "Les données restent disponibles ; créez une sauvegarde depuis Administration.",
+                        "Sauvegarde automatique",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    startupResult = startupResult with { DailyBackup = null };
+                }
                 initializationState = await GetInitializationStateAsync(serviceProvider);
                 if (!initializationState.IsInitializationComplete)
                 {
@@ -169,6 +192,8 @@ public partial class App : System.Windows.Application
             () => provider.GetRequiredService<SupplierPaymentsViewModel>()));
         services.AddTransient<InitialCustomerReceivablesViewModel>();
         services.AddTransient<InitialSupplierPayablesViewModel>();
+        services.AddSingleton<IBackupDialogService, BackupDialogService>();
+        services.AddTransient<BackupViewModel>();
         services.AddTransient<AdministrationViewModel>();
         services.AddTransient(provider => new Lazy<AdministrationViewModel>(
             () => provider.GetRequiredService<AdministrationViewModel>()));
@@ -182,12 +207,28 @@ public partial class App : System.Windows.Application
         });
     }
 
-    private static async Task MigrateDatabaseAsync(ServiceProvider serviceProvider)
+    private static async Task<FinancialDatabaseStartupResult> MigrateDatabaseAsync(
+        ServiceProvider serviceProvider)
     {
         await using var scope = serviceProvider.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FinancialManagementDbContext>();
-        await FinancialDatabaseStartup.InitializeAsync(dbContext);
+        var backupService = scope.ServiceProvider.GetRequiredService<IStartupDatabaseBackupService>();
+        return await FinancialDatabaseStartup.InitializeAsync(dbContext, backupService);
     }
+
+    private static string GetDataInitializationErrorMessage(Exception exception) => exception switch
+    {
+        FinancialStorageIntegrityException =>
+            "La base de données contient des données financières dans un format invalide. "
+                + "Le démarrage a été bloqué afin d’éviter une altération des montants.",
+        PreMigrationBackupException =>
+            "La mise à jour a été arrêtée car la sauvegarde de sécurité préalable n'a pas pu être créée. "
+                + "La base n'a pas été migrée.",
+        DatabaseMigrationWithBackupException migrationFailure =>
+            "La mise à jour de la base n'a pas pu être terminée. Une sauvegarde de récupération est disponible ici :"
+                + Environment.NewLine + migrationFailure.RecoveryBackupPath,
+        _ => "Impossible d'initialiser les données de l'application."
+    };
 
     private bool ShowLogin(ServiceProvider serviceProvider)
     {
