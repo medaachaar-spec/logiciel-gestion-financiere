@@ -105,18 +105,38 @@ internal sealed class SupplierService(
         }
 
         var totalCount = await suppliers.CountAsync(cancellationToken);
-        var items = await suppliers
+        var rows = await suppliers
             .OrderBy(supplier => supplier.Name)
             .ThenBy(supplier => supplier.Id)
             .Skip((int)skip)
             .Take(query.PageSize)
+            .Select(supplier => new
+            {
+                supplier.Id,
+                supplier.Name,
+                supplier.Phone,
+                supplier.Company,
+                supplier.Identifier
+            })
+            .ToListAsync(cancellationToken);
+        var balances = await CurrentPartyBalanceReader.ReadSupplierAsync(
+            dbContext,
+            rows.Select(item => item.Id).ToArray(),
+            cancellationToken);
+        if (balances is null)
+        {
+            return SupplierListResult.Failed(query, SupplierListFailureReason.DataIntegrityViolation);
+        }
+
+        var items = rows
             .Select(supplier => new SupplierListItem(
                 supplier.Id,
                 supplier.Name,
                 supplier.Phone,
                 supplier.Company,
-                supplier.Identifier))
-            .ToListAsync(cancellationToken);
+                supplier.Identifier,
+                balances.GetValueOrDefault(supplier.Id)))
+            .ToArray();
 
         return SupplierListResult.Succeeded(query, items, totalCount);
     }

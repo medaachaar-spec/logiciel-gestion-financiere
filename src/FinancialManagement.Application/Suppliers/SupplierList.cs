@@ -10,7 +10,8 @@ public sealed record SupplierListItem(
     string Name,
     string? Phone,
     string? Company,
-    string? Identifier);
+    string? Identifier,
+    long CurrentPayableMinorUnits);
 
 public enum SupplierListFailureReason
 {
@@ -18,7 +19,8 @@ public enum SupplierListFailureReason
     NotAuthenticated,
     Forbidden,
     InvalidPageNumber,
-    InvalidPageSize
+    InvalidPageSize,
+    DataIntegrityViolation
 }
 
 public sealed class SupplierListResult

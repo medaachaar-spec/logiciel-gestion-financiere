@@ -105,18 +105,38 @@ internal sealed class ClientService(
         }
 
         var totalCount = await clients.CountAsync(cancellationToken);
-        var items = await clients
+        var rows = await clients
             .OrderBy(client => client.Name)
             .ThenBy(client => client.Id)
             .Skip((int)skip)
             .Take(query.PageSize)
+            .Select(client => new
+            {
+                client.Id,
+                client.Name,
+                client.Phone,
+                client.Company,
+                client.Identifier
+            })
+            .ToListAsync(cancellationToken);
+        var balances = await CurrentPartyBalanceReader.ReadCustomerAsync(
+            dbContext,
+            rows.Select(item => item.Id).ToArray(),
+            cancellationToken);
+        if (balances is null)
+        {
+            return ClientListResult.Failed(query, ClientListFailureReason.DataIntegrityViolation);
+        }
+
+        var items = rows
             .Select(client => new ClientListItem(
                 client.Id,
                 client.Name,
                 client.Phone,
                 client.Company,
-                client.Identifier))
-            .ToListAsync(cancellationToken);
+                client.Identifier,
+                balances.GetValueOrDefault(client.Id)))
+            .ToArray();
 
         return ClientListResult.Succeeded(query, items, totalCount);
     }

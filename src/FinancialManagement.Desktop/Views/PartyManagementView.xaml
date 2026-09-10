@@ -23,6 +23,12 @@
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Text}" />
         </Style>
+        <Style x:Key="PartyMoneyDataGridCellTextStyle"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource PartyDataGridCellTextStyle}">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="TextAlignment" Value="Right" />
+        </Style>
         <Style x:Key="DangerButtonStyle"
                TargetType="Button"
                BasedOn="{StaticResource SecondaryButtonStyle}">
@@ -142,7 +148,8 @@
             </StackPanel>
 
             <Grid Grid.Row="3">
-                <DataGrid ItemsSource="{Binding Items}"
+                <DataGrid x:Name="PartyDataGrid"
+                          ItemsSource="{Binding Items}"
                           Style="{StaticResource PartyDataGridStyle}"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
@@ -167,8 +174,12 @@
                                             ElementStyle="{StaticResource PartyDataGridCellTextStyle}" />
                         <DataGridTextColumn Header="Société" Binding="{Binding CompanyDisplay}" Width="1.2*"
                                             ElementStyle="{StaticResource PartyDataGridCellTextStyle}" />
-                        <DataGridTextColumn Header="Identifiant" Binding="{Binding IdentifierDisplay}" Width="1.1*"
-                                            ElementStyle="{StaticResource PartyDataGridCellTextStyle}" />
+                        <DataGridTextColumn Binding="{Binding CurrentBalanceDisplay}" Width="1.1*"
+                                            ElementStyle="{StaticResource PartyMoneyDataGridCellTextStyle}">
+                            <DataGridTextColumn.Header>
+                                <TextBlock Text="{Binding DataContext.BalanceColumnHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                            </DataGridTextColumn.Header>
+                        </DataGridTextColumn>
                         <DataGridTemplateColumn Header="Actions" Width="190">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>

@@ -24,7 +24,8 @@ public sealed class SuppliersViewModel : PartyManagementViewModelBase
             "Fournisseur",
             "fournisseurs",
             "Fournisseurs",
-            "Consultez et gérez les informations de vos fournisseurs.")
+            "Consultez et gérez les informations de vos fournisseurs.",
+            "Dette actuelle")
     {
         ArgumentNullException.ThrowIfNull(supplierService);
         _supplierService = supplierService;
@@ -51,7 +52,9 @@ public sealed class SuppliersViewModel : PartyManagementViewModelBase
                 item.Phone,
                 item.Company,
                 item.Identifier,
-                "Fournisseur"))
+                item.CurrentPayableMinorUnits,
+                "Fournisseur",
+                "dette actuelle"))
             .ToArray();
         return new PartyPageResult(
             true,
@@ -140,6 +143,7 @@ public sealed class SuppliersViewModel : PartyManagementViewModelBase
         SupplierListFailureReason.Forbidden => PartyFailureReason.Forbidden,
         SupplierListFailureReason.InvalidPageNumber => PartyFailureReason.InvalidPageNumber,
         SupplierListFailureReason.InvalidPageSize => PartyFailureReason.InvalidPageSize,
+        SupplierListFailureReason.DataIntegrityViolation => PartyFailureReason.Technical,
         _ => PartyFailureReason.Technical
     };
 

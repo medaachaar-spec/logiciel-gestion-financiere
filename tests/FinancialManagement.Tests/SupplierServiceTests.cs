@@ -183,15 +183,18 @@ public sealed class SupplierListServiceTests
     public async Task Employee_with_view_permission_can_list()
     {
         using var database = new PartyCrudTestDatabase();
+        var responsible = database.AddUser("supplier-list-creator", UserRole.Responsable);
         var employee = database.AddUser("supplier-list-allowed", UserRole.Employe);
         database.Grant(employee, PermissionModule.Suppliers, canView: true, canCreate: false, canModify: false);
-        database.AddSupplier("Visible");
+        var supplier = database.AddSupplier("Visible");
+        database.AddPurchase(supplier, responsible, 123_400);
         await database.AuthenticateAsync(employee);
 
         var result = await database.SupplierService.GetPageAsync(new());
 
         Assert.True(result.Success);
         Assert.Equal(["Visible"], result.Items.Select(item => item.Name));
+        Assert.Equal(123_400, Assert.Single(result.Items).CurrentPayableMinorUnits);
     }
 
     [Theory]
@@ -277,11 +280,91 @@ public sealed class SupplierListServiceTests
         var result = await database.SupplierService.GetPageAsync(new());
 
         var item = Assert.Single(result.Items);
-        Assert.Equal(["Id", "Name", "Phone", "Company", "Identifier"],
+        Assert.Equal(["Id", "Name", "Phone", "Company", "Identifier", "CurrentPayableMinorUnits"],
             typeof(SupplierListItem).GetProperties().Select(property => property.Name));
         Assert.Equal("0600", item.Phone);
         Assert.Equal("Company", item.Company);
         Assert.Empty(database.Context.ChangeTracker.Entries<Supplier>());
+    }
+
+    [Fact]
+    public async Task List_aggregates_current_payables_from_obligations_and_explicit_allocations()
+    {
+        using var database = new PartyCrudTestDatabase();
+        var responsible = database.AddUser("supplier-current-payable", UserRole.Responsable);
+        var zero = database.AddSupplier("A Zero", "SUP-ZERO");
+        var fullyPaid = database.AddSupplier("B Fully paid", "SUP-FULL");
+        var partial = database.AddSupplier("C Partial", "SUP-PART");
+        var multiple = database.AddSupplier("D Multiple", "SUP-MULTI");
+        var unappliedAdvance = database.AddSupplier("E Advance", "SUP-ADV");
+        var initial = database.AddSupplier("F Initial", "SUP-INITIAL");
+
+        var fullyPaidPurchase = database.AddPurchase(fullyPaid, responsible, 300_000);
+        var fullyPaidPayment = database.AddSupplierPayment(fullyPaid, responsible, 300_000);
+        database.AddSupplierPaymentAllocation(fullyPaidPayment, 300_000, purchase: fullyPaidPurchase);
+
+        var partialPurchase = database.AddPurchase(partial, responsible, 500_000);
+        var partialPayment = database.AddSupplierPayment(partial, responsible, 200_000);
+        database.AddSupplierPaymentAllocation(partialPayment, 200_000, purchase: partialPurchase);
+
+        var firstMultiplePurchase = database.AddPurchase(multiple, responsible, 400_000);
+        var secondMultiplePurchase = database.AddPurchase(multiple, responsible, 600_000);
+        var firstMultiplePayment = database.AddSupplierPayment(multiple, responsible, 250_000);
+        database.AddSupplierPaymentAllocation(firstMultiplePayment, 200_000, purchase: firstMultiplePurchase);
+        database.AddSupplierPaymentAllocation(firstMultiplePayment, 50_000, purchase: secondMultiplePurchase);
+        var secondMultiplePayment = database.AddSupplierPayment(multiple, responsible, 300_000);
+        database.AddSupplierPaymentAllocation(secondMultiplePayment, 300_000, purchase: secondMultiplePurchase);
+
+        database.AddPurchase(unappliedAdvance, responsible, 700_000);
+        database.AddSupplierPayment(unappliedAdvance, responsible, 250_000);
+
+        var initialPayable = database.AddInitialSupplierPayable(initial, responsible, 900_000);
+        var initialPayment = database.AddSupplierPayment(initial, responsible, 400_000);
+        database.AddSupplierPaymentAllocation(
+            initialPayment,
+            400_000,
+            initialPayable: initialPayable);
+
+        await database.AuthenticateAsync(responsible);
+        database.Context.ChangeTracker.Clear();
+
+        var result = await database.SupplierService.GetPageAsync(new());
+
+        Assert.True(result.Success);
+        var balances = result.Items.ToDictionary(item => item.Id, item => item.CurrentPayableMinorUnits);
+        Assert.Equal(0, balances[zero.Id]);
+        Assert.Equal(0, balances[fullyPaid.Id]);
+        Assert.Equal(300_000, balances[partial.Id]);
+        Assert.Equal(450_000, balances[multiple.Id]);
+        Assert.Equal(700_000, balances[unappliedAdvance.Id]);
+        Assert.Equal(500_000, balances[initial.Id]);
+        Assert.Equal("SUP-PART", result.Items.Single(item => item.Id == partial.Id).Identifier);
+    }
+
+    [Fact]
+    public async Task List_balance_query_count_is_constant_across_page_sizes()
+    {
+        var trace = new SnapshotTrace();
+        using var database = new PartyCrudTestDatabase(trace);
+        var responsible = database.AddUser("supplier-balance-query-count", UserRole.Responsable);
+        for (var index = 0; index < 60; index++)
+        {
+            var supplier = database.AddSupplier($"Supplier {index:00}");
+            database.AddPurchase(supplier, responsible, 10_000 + index);
+        }
+        await database.AuthenticateAsync(responsible);
+
+        trace.Start();
+        var single = await database.SupplierService.GetPageAsync(new(PageSize: 1));
+        var singlePageReads = trace.Reads.Count;
+        trace.Start();
+        var full = await database.SupplierService.GetPageAsync(new(PageSize: 50));
+        var fullPageReads = trace.Reads.Count;
+
+        Assert.True(single.Success);
+        Assert.True(full.Success);
+        Assert.Equal(singlePageReads, fullPageReads);
+        Assert.InRange(fullPageReads, 1, 8);
     }
 
     [Fact]

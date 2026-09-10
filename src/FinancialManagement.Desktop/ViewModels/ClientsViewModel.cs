@@ -24,7 +24,8 @@ public sealed class ClientsViewModel : PartyManagementViewModelBase
             "Client",
             "clients",
             "Clients",
-            "Consultez et gérez les informations de vos clients.")
+            "Consultez et gérez les informations de vos clients.",
+            "Créance actuelle")
     {
         ArgumentNullException.ThrowIfNull(clientService);
         _clientService = clientService;
@@ -51,7 +52,9 @@ public sealed class ClientsViewModel : PartyManagementViewModelBase
                 item.Phone,
                 item.Company,
                 item.Identifier,
-                "Client"))
+                item.CurrentReceivableMinorUnits,
+                "Client",
+                "créance actuelle"))
             .ToArray();
         return new PartyPageResult(
             true,
@@ -140,6 +143,7 @@ public sealed class ClientsViewModel : PartyManagementViewModelBase
         ClientListFailureReason.Forbidden => PartyFailureReason.Forbidden,
         ClientListFailureReason.InvalidPageNumber => PartyFailureReason.InvalidPageNumber,
         ClientListFailureReason.InvalidPageSize => PartyFailureReason.InvalidPageSize,
+        ClientListFailureReason.DataIntegrityViolation => PartyFailureReason.Technical,
         _ => PartyFailureReason.Technical
     };
 

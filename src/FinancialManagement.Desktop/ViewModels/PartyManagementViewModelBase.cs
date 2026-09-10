@@ -75,7 +75,8 @@ public abstract class PartyManagementViewModelBase : ViewModelBase
         string partyKindCapitalized,
         string partyPluralLower,
         string pageTitle,
-        string pageDescription)
+        string pageDescription,
+        string balanceColumnHeader)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
         ArgumentNullException.ThrowIfNull(authorizationService);
@@ -85,6 +86,7 @@ public abstract class PartyManagementViewModelBase : ViewModelBase
         ArgumentException.ThrowIfNullOrWhiteSpace(partyPluralLower);
         ArgumentException.ThrowIfNullOrWhiteSpace(pageTitle);
         ArgumentException.ThrowIfNullOrWhiteSpace(pageDescription);
+        ArgumentException.ThrowIfNullOrWhiteSpace(balanceColumnHeader);
 
         _currentUserSession = currentUserSession;
         _authorizationService = authorizationService;
@@ -95,6 +97,7 @@ public abstract class PartyManagementViewModelBase : ViewModelBase
         _partyPluralLower = partyPluralLower;
         PageTitle = pageTitle;
         PageDescription = pageDescription;
+        BalanceColumnHeader = balanceColumnHeader;
 
         _refreshRelayCommand = new AsyncRelayCommand(
             _ => RefreshAsync(),
@@ -178,6 +181,8 @@ public abstract class PartyManagementViewModelBase : ViewModelBase
     public string PageTitle { get; }
 
     public string PageDescription { get; }
+
+    public string BalanceColumnHeader { get; }
 
     public string NewItemLabel => $"Nouveau {_partyKindLower}";
 
@@ -560,13 +565,21 @@ public abstract class PartyManagementViewModelBase : ViewModelBase
 
     public Task LoadAsync(CancellationToken cancellationToken = default)
     {
-        if (_initialLoadRequested || _isStopped)
+        if (_isStopped)
         {
             return _pendingOperation;
         }
 
-        _initialLoadRequested = true;
-        _pendingOperation = InitializeCoreAsync(cancellationToken);
+        if (!_initialLoadRequested)
+        {
+            _initialLoadRequested = true;
+            _pendingOperation = InitializeCoreAsync(cancellationToken);
+        }
+        else if (!IsBusy)
+        {
+            _pendingOperation = LoadPageCoreAsync(PageNumber, cancellationToken);
+        }
+
         return _pendingOperation;
     }
 

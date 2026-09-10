@@ -21,7 +21,7 @@ internal sealed class PartyCrudTestDatabase : IDisposable
     private readonly IAuthenticationService authenticationService;
     private int referenceSequence;
 
-    public PartyCrudTestDatabase()
+    public PartyCrudTestDatabase(SnapshotTrace? trace = null)
     {
         Clock = new MutableTimeProvider(new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero));
         databasePath = Path.Combine(
@@ -31,6 +31,11 @@ internal sealed class PartyCrudTestDatabase : IDisposable
         var services = new ServiceCollection();
         services.AddSingleton<TimeProvider>(Clock);
         services.AddInfrastructure($"Data Source={databasePath};Pooling=False");
+        if (trace is not null)
+        {
+            services.AddDbContext<FinancialManagementDbContext>(options =>
+                options.AddInterceptors(trace));
+        }
         serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
@@ -52,6 +57,8 @@ internal sealed class PartyCrudTestDatabase : IDisposable
     public ISupplierService SupplierService { get; }
 
     public MutableTimeProvider Clock { get; }
+
+    public T Get<T>() where T : notnull => scope.ServiceProvider.GetRequiredService<T>();
 
     public User AddUser(string username, UserRole role)
     {
@@ -128,6 +135,146 @@ internal sealed class PartyCrudTestDatabase : IDisposable
         Context.Suppliers.Add(supplier);
         Context.SaveChanges();
         return supplier;
+    }
+
+    public Sale AddSale(Client client, User creator, long amountMinor)
+    {
+        var sale = new Sale
+        {
+            Reference = NextReference("VTE"),
+            SaleDate = new DateOnly(2026, 9, 6),
+            TotalAmountMinor = amountMinor,
+            ClientId = client.Id,
+            CreatedByUserId = creator.Id,
+            CreatedAtUtc = Clock.GetUtcNow(),
+            UpdatedAtUtc = Clock.GetUtcNow()
+        };
+        Context.Sales.Add(sale);
+        Context.SaveChanges();
+        return sale;
+    }
+
+    public CustomerPayment AddCustomerPayment(Client client, User creator, long amountMinor)
+    {
+        var payment = new CustomerPayment
+        {
+            Reference = NextReference("ENC"),
+            ClientId = client.Id,
+            PaymentDate = new DateOnly(2026, 9, 6),
+            AmountMinor = amountMinor,
+            PaymentMethod = PaymentMethod.Cash,
+            CreatedByUserId = creator.Id,
+            CreatedAtUtc = Clock.GetUtcNow()
+        };
+        Context.CustomerPayments.Add(payment);
+        Context.SaveChanges();
+        return payment;
+    }
+
+    public InitialCustomerReceivable AddInitialCustomerReceivable(
+        Client client,
+        User creator,
+        long amountMinor)
+    {
+        var receivable = new InitialCustomerReceivable
+        {
+            Reference = NextReference("CRE"),
+            ClientId = client.Id,
+            ReceivableDate = new DateOnly(2026, 9, 6),
+            InitialAmountMinor = amountMinor,
+            CreatedByUserId = creator.Id,
+            CreatedAtUtc = Clock.GetUtcNow()
+        };
+        Context.InitialCustomerReceivables.Add(receivable);
+        Context.SaveChanges();
+        return receivable;
+    }
+
+    public void AddCustomerPaymentAllocation(
+        CustomerPayment payment,
+        long amountMinor,
+        Sale? sale = null,
+        InitialCustomerReceivable? initialReceivable = null)
+    {
+        Context.CustomerPaymentAllocations.Add(new CustomerPaymentAllocation
+        {
+            CustomerPaymentId = payment.Id,
+            SaleId = sale?.Id,
+            InitialCustomerReceivableId = initialReceivable?.Id,
+            AmountMinor = amountMinor,
+            CreatedAtUtc = Clock.GetUtcNow()
+        });
+        Context.SaveChanges();
+    }
+
+    public Purchase AddPurchase(Supplier supplier, User creator, long amountMinor)
+    {
+        var purchase = new Purchase
+        {
+            Reference = NextReference("ACH"),
+            PurchaseDate = new DateOnly(2026, 9, 6),
+            TotalAmountMinor = amountMinor,
+            SupplierId = supplier.Id,
+            CreatedByUserId = creator.Id,
+            CreatedAtUtc = Clock.GetUtcNow(),
+            UpdatedAtUtc = Clock.GetUtcNow()
+        };
+        Context.Purchases.Add(purchase);
+        Context.SaveChanges();
+        return purchase;
+    }
+
+    public SupplierPayment AddSupplierPayment(Supplier supplier, User creator, long amountMinor)
+    {
+        var payment = new SupplierPayment
+        {
+            Reference = NextReference("DEC"),
+            SupplierId = supplier.Id,
+            PaymentDate = new DateOnly(2026, 9, 6),
+            AmountMinor = amountMinor,
+            PaymentMethod = PaymentMethod.Cash,
+            CreatedByUserId = creator.Id,
+            CreatedAtUtc = Clock.GetUtcNow()
+        };
+        Context.SupplierPayments.Add(payment);
+        Context.SaveChanges();
+        return payment;
+    }
+
+    public InitialSupplierPayable AddInitialSupplierPayable(
+        Supplier supplier,
+        User creator,
+        long amountMinor)
+    {
+        var payable = new InitialSupplierPayable
+        {
+            Reference = NextReference("DET"),
+            SupplierId = supplier.Id,
+            PayableDate = new DateOnly(2026, 9, 6),
+            InitialAmountMinor = amountMinor,
+            CreatedByUserId = creator.Id,
+            CreatedAtUtc = Clock.GetUtcNow()
+        };
+        Context.InitialSupplierPayables.Add(payable);
+        Context.SaveChanges();
+        return payable;
+    }
+
+    public void AddSupplierPaymentAllocation(
+        SupplierPayment payment,
+        long amountMinor,
+        Purchase? purchase = null,
+        InitialSupplierPayable? initialPayable = null)
+    {
+        Context.SupplierPaymentAllocations.Add(new SupplierPaymentAllocation
+        {
+            SupplierPaymentId = payment.Id,
+            PurchaseId = purchase?.Id,
+            InitialSupplierPayableId = initialPayable?.Id,
+            AmountMinor = amountMinor,
+            CreatedAtUtc = Clock.GetUtcNow()
+        });
+        Context.SaveChanges();
     }
 
     public void AddClientUse(Client client, ClientUseKind useKind, User creator)

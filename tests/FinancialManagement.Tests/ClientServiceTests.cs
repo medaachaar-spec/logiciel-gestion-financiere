@@ -183,15 +183,18 @@ public sealed class ClientListServiceTests
     public async Task Employee_with_view_permission_can_list()
     {
         using var database = new PartyCrudTestDatabase();
+        var responsible = database.AddUser("client-list-creator", UserRole.Responsable);
         var employee = database.AddUser("client-list-allowed", UserRole.Employe);
         database.Grant(employee, PermissionModule.Clients, canView: true, canCreate: false, canModify: false);
-        database.AddClient("Visible");
+        var client = database.AddClient("Visible");
+        database.AddSale(client, responsible, 123_400);
         await database.AuthenticateAsync(employee);
 
         var result = await database.ClientService.GetPageAsync(new());
 
         Assert.True(result.Success);
         Assert.Equal(["Visible"], result.Items.Select(item => item.Name));
+        Assert.Equal(123_400, Assert.Single(result.Items).CurrentReceivableMinorUnits);
     }
 
     [Theory]
@@ -277,11 +280,91 @@ public sealed class ClientListServiceTests
         var result = await database.ClientService.GetPageAsync(new());
 
         var item = Assert.Single(result.Items);
-        Assert.Equal(["Id", "Name", "Phone", "Company", "Identifier"],
+        Assert.Equal(["Id", "Name", "Phone", "Company", "Identifier", "CurrentReceivableMinorUnits"],
             typeof(ClientListItem).GetProperties().Select(property => property.Name));
         Assert.Equal("0600", item.Phone);
         Assert.Equal("Company", item.Company);
         Assert.Empty(database.Context.ChangeTracker.Entries<Client>());
+    }
+
+    [Fact]
+    public async Task List_aggregates_current_receivables_from_obligations_and_explicit_allocations()
+    {
+        using var database = new PartyCrudTestDatabase();
+        var responsible = database.AddUser("client-current-receivable", UserRole.Responsable);
+        var zero = database.AddClient("A Zero", "CLI-ZERO");
+        var fullyPaid = database.AddClient("B Fully paid", "CLI-FULL");
+        var partial = database.AddClient("C Partial", "CLI-PART");
+        var multiple = database.AddClient("D Multiple", "CLI-MULTI");
+        var unappliedAdvance = database.AddClient("E Advance", "CLI-ADV");
+        var initial = database.AddClient("F Initial", "CLI-INITIAL");
+
+        var fullyPaidSale = database.AddSale(fullyPaid, responsible, 300_000);
+        var fullyPaidPayment = database.AddCustomerPayment(fullyPaid, responsible, 300_000);
+        database.AddCustomerPaymentAllocation(fullyPaidPayment, 300_000, sale: fullyPaidSale);
+
+        var partialSale = database.AddSale(partial, responsible, 500_000);
+        var partialPayment = database.AddCustomerPayment(partial, responsible, 200_000);
+        database.AddCustomerPaymentAllocation(partialPayment, 200_000, sale: partialSale);
+
+        var firstMultipleSale = database.AddSale(multiple, responsible, 400_000);
+        var secondMultipleSale = database.AddSale(multiple, responsible, 600_000);
+        var firstMultiplePayment = database.AddCustomerPayment(multiple, responsible, 250_000);
+        database.AddCustomerPaymentAllocation(firstMultiplePayment, 200_000, sale: firstMultipleSale);
+        database.AddCustomerPaymentAllocation(firstMultiplePayment, 50_000, sale: secondMultipleSale);
+        var secondMultiplePayment = database.AddCustomerPayment(multiple, responsible, 300_000);
+        database.AddCustomerPaymentAllocation(secondMultiplePayment, 300_000, sale: secondMultipleSale);
+
+        database.AddSale(unappliedAdvance, responsible, 700_000);
+        database.AddCustomerPayment(unappliedAdvance, responsible, 250_000);
+
+        var initialReceivable = database.AddInitialCustomerReceivable(initial, responsible, 900_000);
+        var initialPayment = database.AddCustomerPayment(initial, responsible, 400_000);
+        database.AddCustomerPaymentAllocation(
+            initialPayment,
+            400_000,
+            initialReceivable: initialReceivable);
+
+        await database.AuthenticateAsync(responsible);
+        database.Context.ChangeTracker.Clear();
+
+        var result = await database.ClientService.GetPageAsync(new());
+
+        Assert.True(result.Success);
+        var balances = result.Items.ToDictionary(item => item.Id, item => item.CurrentReceivableMinorUnits);
+        Assert.Equal(0, balances[zero.Id]);
+        Assert.Equal(0, balances[fullyPaid.Id]);
+        Assert.Equal(300_000, balances[partial.Id]);
+        Assert.Equal(450_000, balances[multiple.Id]);
+        Assert.Equal(700_000, balances[unappliedAdvance.Id]);
+        Assert.Equal(500_000, balances[initial.Id]);
+        Assert.Equal("CLI-PART", result.Items.Single(item => item.Id == partial.Id).Identifier);
+    }
+
+    [Fact]
+    public async Task List_balance_query_count_is_constant_across_page_sizes()
+    {
+        var trace = new SnapshotTrace();
+        using var database = new PartyCrudTestDatabase(trace);
+        var responsible = database.AddUser("client-balance-query-count", UserRole.Responsable);
+        for (var index = 0; index < 60; index++)
+        {
+            var client = database.AddClient($"Client {index:00}");
+            database.AddSale(client, responsible, 10_000 + index);
+        }
+        await database.AuthenticateAsync(responsible);
+
+        trace.Start();
+        var single = await database.ClientService.GetPageAsync(new(PageSize: 1));
+        var singlePageReads = trace.Reads.Count;
+        trace.Start();
+        var full = await database.ClientService.GetPageAsync(new(PageSize: 50));
+        var fullPageReads = trace.Reads.Count;
+
+        Assert.True(single.Success);
+        Assert.True(full.Success);
+        Assert.Equal(singlePageReads, fullPageReads);
+        Assert.InRange(fullPageReads, 1, 8);
     }
 
     [Fact]

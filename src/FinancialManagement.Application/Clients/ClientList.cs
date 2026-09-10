@@ -10,7 +10,8 @@ public sealed record ClientListItem(
     string Name,
     string? Phone,
     string? Company,
-    string? Identifier);
+    string? Identifier,
+    long CurrentReceivableMinorUnits);
 
 public enum ClientListFailureReason
 {
@@ -18,7 +19,8 @@ public enum ClientListFailureReason
     NotAuthenticated,
     Forbidden,
     InvalidPageNumber,
-    InvalidPageSize
+    InvalidPageSize,
+    DataIntegrityViolation
 }
 
 public sealed class ClientListResult

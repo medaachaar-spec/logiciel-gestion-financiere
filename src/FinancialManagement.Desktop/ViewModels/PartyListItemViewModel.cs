@@ -1,3 +1,5 @@
+using FinancialManagement.Desktop.Formatting;
+
 namespace FinancialManagement.Desktop.ViewModels;
 
 public sealed class PartyListItemViewModel
@@ -8,15 +10,20 @@ public sealed class PartyListItemViewModel
         string? phone,
         string? company,
         string? identifier,
-        string partyKind)
+        long currentBalanceMinorUnits,
+        string partyKind,
+        string currentBalanceLabel)
     {
         Id = id;
         Name = name;
         PhoneDisplay = DisplayOptional(phone);
         CompanyDisplay = DisplayOptional(company);
         IdentifierDisplay = DisplayOptional(identifier);
+        CurrentBalanceMinorUnits = currentBalanceMinorUnits;
+        CurrentBalanceDisplay = MoneyFormatter.FormatMinor(currentBalanceMinorUnits);
         AccessibleDescription =
-            $"{partyKind} {name}, téléphone {PhoneDisplay}, société {CompanyDisplay}, identifiant {IdentifierDisplay}";
+            $"{partyKind} {name}, téléphone {PhoneDisplay}, société {CompanyDisplay}, " +
+            $"{currentBalanceLabel} {CurrentBalanceDisplay}";
     }
 
     public long Id { get; }
@@ -28,6 +35,10 @@ public sealed class PartyListItemViewModel
     public string CompanyDisplay { get; }
 
     public string IdentifierDisplay { get; }
+
+    public long CurrentBalanceMinorUnits { get; }
+
+    public string CurrentBalanceDisplay { get; }
 
     public string AccessibleDescription { get; }
 
