@@ -12,6 +12,7 @@ public sealed class DueAlertItemViewModel
         Reference = alert.Reference;
         PartyName = alert.PartyName;
         DueDate = alert.DueDate.ToString("dd/MM/yyyy");
+        ReferenceAndDueDate = $"{CompactReference(Reference)} · {DueDate}";
         OutstandingAmount = MoneyFormatter.FormatMinor(alert.OutstandingMinor);
         Status = alert.Status;
         StatusLabel = FormatStatus(alert.Status);
@@ -31,6 +32,8 @@ public sealed class DueAlertItemViewModel
 
     public string DueDate { get; }
 
+    public string ReferenceAndDueDate { get; }
+
     public string OutstandingAmount { get; }
 
     public FinancialDueAlertStatus Status { get; }
@@ -42,6 +45,9 @@ public sealed class DueAlertItemViewModel
     public string SourceTypeLabel { get; }
 
     public string AccessibilityName { get; }
+
+    private static string CompactReference(string reference) =>
+        reference.Length <= 18 ? reference : $"{reference[..17]}…";
 
     private static string FormatStatus(FinancialDueAlertStatus status) => status switch
     {

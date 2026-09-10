@@ -143,6 +143,9 @@ public partial class App : System.Windows.Application
         services.AddTransient<DashboardViewModel>();
         services.AddTransient(provider => new Lazy<DashboardViewModel>(
             () => provider.GetRequiredService<DashboardViewModel>()));
+        services.AddTransient<ReportsViewModel>();
+        services.AddTransient(provider => new Lazy<ReportsViewModel>(
+            () => provider.GetRequiredService<ReportsViewModel>()));
         services.AddTransient<TreasuryViewModel>();
         services.AddTransient(provider => new Lazy<TreasuryViewModel>(
             () => provider.GetRequiredService<TreasuryViewModel>()));

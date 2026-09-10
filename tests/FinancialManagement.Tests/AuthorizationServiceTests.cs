@@ -267,6 +267,7 @@ public sealed class AuthorizationServiceTests
         Assert.Equal(
             [
                 ResponsibleCapability.GlobalDashboard,
+                ResponsibleCapability.Reports,
                 ResponsibleCapability.Treasury,
                 ResponsibleCapability.Administration,
                 ResponsibleCapability.BackupRestore,

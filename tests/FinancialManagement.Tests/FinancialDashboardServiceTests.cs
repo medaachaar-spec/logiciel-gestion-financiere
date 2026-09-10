@@ -34,7 +34,8 @@ public sealed class FinancialDashboardServiceTests
         var user = database.AddUser("dashboard-empty", UserRole.Responsable);
         await database.AuthenticateAsync(user);
 
-        var result = await database.Dashboard.GetAsync(new FinancialDashboardQuery(null, null));
+        var result = await database.Dashboard.GetAsync(
+            new FinancialDashboardQuery(September1, September30));
 
         Assert.True(result.Success);
         Assert.Equal(FinancialDashboardFailureReason.None, result.FailureReason);
@@ -50,6 +51,17 @@ public sealed class FinancialDashboardServiceTests
         Assert.Equal(0, result.CurrentCashBalanceMinor);
         Assert.Equal(0, result.CurrentBankBalanceMinor);
         Assert.Equal(0, result.CurrentTotalTreasuryMinor);
+        Assert.Equal(30, result.DailyPoints.Count);
+        Assert.All(result.DailyPoints, point =>
+        {
+            Assert.Equal(0, point.SalesMinor);
+            Assert.Equal(0, point.PurchasesMinor);
+            Assert.Equal(0, point.ExpensesMinor);
+            Assert.Equal(0, point.CustomerCollectionsMinor);
+            Assert.Equal(0, point.SupplierPaymentsMinor);
+        });
+        Assert.Empty(result.TopCustomerReceivables);
+        Assert.Empty(result.TopSupplierPayables);
     }
 
     [Theory]
@@ -140,6 +152,199 @@ public sealed class FinancialDashboardServiceTests
         Assert.Equal(3, endOnly.SupplierPaymentsMinor / 100);
         Assert.Equal(3, startOnly.ExpensesMinor / 100);
         Assert.Equal(3, endOnly.ExpensesMinor / 100);
+    }
+
+    [Fact]
+    public async Task Selected_and_comparison_months_return_real_daily_series_with_zero_filled_days()
+    {
+        using var database = new DashboardTestDatabase();
+        var user = database.AddUser("dashboard-v2-series", UserRole.Responsable);
+        var client = database.AddClient("Daily Client");
+        var supplier = database.AddSupplier("Daily Supplier");
+        await database.AuthenticateAsync(user);
+
+        database.AddSale(user, client, August31, 100);
+        database.AddPurchase(user, supplier, August31, 100);
+        database.AddExpense(user, August31, 100, PaymentMethod.Cash);
+        database.AddSale(user, client, September1, 1_000);
+        database.AddPurchase(user, supplier, September1, 400);
+        database.AddExpense(user, September1, 100, PaymentMethod.Cash);
+        database.AddCustomerPayment(user, client, September1, 600, PaymentMethod.Cash);
+        database.AddSupplierPayment(user, supplier, September1, 200, PaymentMethod.BankTransfer);
+        var september3 = new DateOnly(2026, 9, 3);
+        database.AddSale(user, client, september3, 500);
+        database.AddPurchase(user, supplier, september3, 100);
+        database.AddExpense(user, september3, 50, PaymentMethod.BankTransfer);
+        database.AddCustomerPayment(user, client, september3, 100, PaymentMethod.BankTransfer);
+        database.AddSupplierPayment(user, supplier, september3, 50, PaymentMethod.Cash);
+
+        var result = await database.Dashboard.GetAsync(new FinancialDashboardQuery(
+            September1,
+            September30,
+            new DateOnly(2026, 8, 1),
+            August31));
+
+        Assert.True(result.HasComparison);
+        Assert.Equal(1_500, result.TotalSalesMinor);
+        Assert.Equal(500, result.TotalPurchasesMinor);
+        Assert.Equal(150, result.ExpensesMinor);
+        Assert.Equal(850, result.ResultMinor);
+        Assert.Equal(100, result.ComparisonSalesMinor);
+        Assert.Equal(100, result.ComparisonPurchasesMinor);
+        Assert.Equal(100, result.ComparisonExpensesMinor);
+        Assert.Equal(-100, result.ComparisonResultMinor);
+        Assert.Equal(0, result.ComparisonCustomerCollectionsMinor);
+        Assert.Equal(0, result.ComparisonSupplierPaymentsMinor);
+        Assert.Equal(30, result.DailyPoints.Count);
+        Assert.Equal(
+            new FinancialDashboardDailyPoint(September1, 1_000, 400, 100, 600, 200),
+            result.DailyPoints[0]);
+        Assert.Equal(
+            new FinancialDashboardDailyPoint(new DateOnly(2026, 9, 2), 0, 0, 0, 0, 0),
+            result.DailyPoints[1]);
+        Assert.Equal(
+            new FinancialDashboardDailyPoint(september3, 500, 100, 50, 100, 50),
+            result.DailyPoints[2]);
+    }
+
+    [Fact]
+    public async Task Reports_comparison_includes_all_six_flows_across_different_month_lengths()
+    {
+        using var database = new DashboardTestDatabase();
+        var user = database.AddUser("reports-comparison", UserRole.Responsable);
+        var client = database.AddClient("Report Client");
+        var supplier = database.AddSupplier("Report Supplier");
+        await database.AuthenticateAsync(user);
+        var august1 = new DateOnly(2026, 8, 1);
+        database.AddSale(user, client, august1, 400);
+        database.AddPurchase(user, supplier, august1, 100);
+        database.AddExpense(user, august1, 50, PaymentMethod.Cash);
+        database.AddCustomerPayment(user, client, august1, 300, PaymentMethod.Cash);
+        database.AddSupplierPayment(user, supplier, august1, 80, PaymentMethod.Cash);
+        database.AddSale(user, client, September30, 600);
+        database.AddPurchase(user, supplier, September30, 200);
+        database.AddExpense(user, September30, 75, PaymentMethod.Cash);
+        database.AddCustomerPayment(user, client, September30, 450, PaymentMethod.Cash);
+        database.AddSupplierPayment(user, supplier, September30, 120, PaymentMethod.Cash);
+
+        var result = await database.Reports.GetAsync(new FinancialDashboardQuery(
+            September1, September30, august1, August31,
+            IncludeCurrentPositions: false));
+
+        Assert.True(result.Success);
+        Assert.Equal(600, result.TotalSalesMinor);
+        Assert.Equal(400, result.ComparisonSalesMinor);
+        Assert.Equal(450, result.CustomerCollectionsMinor);
+        Assert.Equal(300, result.ComparisonCustomerCollectionsMinor);
+        Assert.Equal(120, result.SupplierPaymentsMinor);
+        Assert.Equal(80, result.ComparisonSupplierPaymentsMinor);
+        Assert.Equal(325, result.ResultMinor);
+        Assert.Equal(250, result.ComparisonResultMinor);
+        Assert.Empty(result.TopCustomerReceivables);
+        Assert.Empty(result.TopSupplierPayables);
+    }
+
+    [Fact]
+    public async Task Reports_annual_evolution_is_sql_aggregated_into_january_through_december()
+    {
+        using var database = new DashboardTestDatabase();
+        var user = database.AddUser("reports-evolution", UserRole.Responsable);
+        var client = database.AddClient("Evolution Client");
+        var supplier = database.AddSupplier("Evolution Supplier");
+        await database.AuthenticateAsync(user);
+        database.AddSale(user, client, new DateOnly(2026, 1, 5), 100);
+        database.AddSale(user, client, new DateOnly(2026, 1, 20), 200);
+        database.AddSale(user, client, new DateOnly(2026, 12, 31), 300);
+        database.AddPurchase(user, supplier, new DateOnly(2026, 12, 31), 100);
+        database.AddExpense(user, new DateOnly(2026, 1, 5), 50, PaymentMethod.Cash);
+        database.AddCustomerPayment(user, client, new DateOnly(2026, 1, 6), 90, PaymentMethod.Cash);
+        database.AddSupplierPayment(user, supplier, new DateOnly(2026, 12, 30), 70, PaymentMethod.Cash);
+
+        var result = await database.Reports.GetAsync(new FinancialDashboardQuery(
+            new DateOnly(2026, 1, 1), new DateOnly(2026, 12, 31),
+            Granularity: FinancialDashboardGranularity.Monthly,
+            IncludeCurrentPositions: false));
+
+        Assert.True(result.Success);
+        Assert.Equal(FinancialDashboardGranularity.Monthly, result.Granularity);
+        Assert.Equal(12, result.DailyPoints.Count);
+        Assert.Equal(new DateOnly(2026, 1, 1), result.DailyPoints[0].Date);
+        Assert.Equal(300, result.DailyPoints[0].SalesMinor);
+        Assert.Equal(90, result.DailyPoints[0].CustomerCollectionsMinor);
+        Assert.Equal(0, result.DailyPoints[1].SalesMinor);
+        Assert.Equal(new DateOnly(2026, 12, 1), result.DailyPoints[11].Date);
+        Assert.Equal(300, result.DailyPoints[11].SalesMinor);
+        Assert.Equal(100, result.DailyPoints[11].PurchasesMinor);
+        Assert.Equal(70, result.DailyPoints[11].SupplierPaymentsMinor);
+        Assert.Equal(600, result.TotalSalesMinor);
+        Assert.Equal(100, result.TotalPurchasesMinor);
+        Assert.Equal(50, result.ExpensesMinor);
+        Assert.Equal(450, result.ResultMinor);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Employee_is_forbidden_from_reports_even_with_all_configurable_permissions(
+        bool grantAllPermissions)
+    {
+        using var database = new DashboardTestDatabase();
+        var employee = database.AddUser("reports-employee-" + grantAllPermissions, UserRole.Employe);
+        if (grantAllPermissions) database.GrantAllModulePermissions(employee);
+        await database.AuthenticateAsync(employee);
+
+        var result = await database.Reports.GetAsync(new FinancialDashboardQuery(
+            September1, September30, IncludeCurrentPositions: false));
+
+        Assert.False(result.Success);
+        Assert.Equal(FinancialDashboardFailureReason.Forbidden, result.FailureReason);
+    }
+
+    [Fact]
+    public async Task Top_outstanding_parties_are_aggregated_and_limited_without_changing_stock_totals()
+    {
+        using var database = new DashboardTestDatabase();
+        var user = database.AddUser("dashboard-v2-top", UserRole.Responsable);
+        await database.AuthenticateAsync(user);
+
+        for (var index = 1; index <= 6; index++)
+        {
+            var client = database.AddClient($"Client {index}");
+            var supplier = database.AddSupplier($"Supplier {index}");
+            database.AddSale(user, client, September1, index * 1_000);
+            database.AddInitialReceivable(user, client, index * 100);
+            database.AddPurchase(user, supplier, September1, index * 2_000);
+            database.AddInitialPayable(user, supplier, index * 200);
+        }
+
+        var result = await database.Dashboard.GetAsync(
+            new FinancialDashboardQuery(September1, September30));
+
+        Assert.Equal(23_100, result.CurrentCustomerReceivablesMinor);
+        Assert.Equal(46_200, result.CurrentSupplierPayablesMinor);
+        Assert.Equal(6, result.CustomerReceivablePartyCount);
+        Assert.Equal(6, result.SupplierPayablePartyCount);
+        Assert.Equal(5, result.TopCustomerReceivables.Count);
+        Assert.Equal(5, result.TopSupplierPayables.Count);
+        Assert.Equal(new FinancialDashboardPartyBalance(6, "Client 6", 6_600), result.TopCustomerReceivables[0]);
+        Assert.Equal(new FinancialDashboardPartyBalance(6, "Supplier 6", 13_200), result.TopSupplierPayables[0]);
+        Assert.DoesNotContain(result.TopCustomerReceivables, item => item.PartyName == "Client 1");
+        Assert.DoesNotContain(result.TopSupplierPayables, item => item.PartyName == "Supplier 1");
+    }
+
+    [Theory]
+    [InlineData(0, 0, null)]
+    [InlineData(1_000, 0, null)]
+    [InlineData(1_200, 1_000, 20.0)]
+    [InlineData(-200, -100, -100.0)]
+    public void Comparison_percentage_is_neutral_for_zero_denominator_and_handles_negative_result(
+        long currentMinor,
+        long comparisonMinor,
+        double? expected)
+    {
+        var percentage = FinancialDashboardComparison.CalculatePercentage(currentMinor, comparisonMinor);
+
+        Assert.Equal(expected.HasValue ? (decimal)expected.Value : null, percentage);
     }
 
     [Fact]
@@ -265,6 +470,8 @@ public sealed class FinancialDashboardServiceTests
             [new SupplierPaymentAllocationInput(firstPurchase.Id, null, 1_000)]);
         var before = await database.Dashboard.GetAsync(
             new FinancialDashboardQuery(September1, September30));
+        var reportBefore = await database.Reports.GetAsync(
+            new FinancialDashboardQuery(September1, September30, IncludeCurrentPositions: false));
 
         var customerAdvance = await database.CustomerAdvanceService.ApplyAsync(
             new ApplyCustomerAdvanceCommand(
@@ -276,6 +483,8 @@ public sealed class FinancialDashboardServiceTests
                 [new SupplierAdvanceAllocationInput(secondPurchase.Id, null, 200)]));
         var after = await database.Dashboard.GetAsync(
             new FinancialDashboardQuery(September1, September30));
+        var reportAfter = await database.Reports.GetAsync(
+            new FinancialDashboardQuery(September1, September30, IncludeCurrentPositions: false));
 
         Assert.True(customerAdvance.Success);
         Assert.True(supplierAdvance.Success);
@@ -283,6 +492,10 @@ public sealed class FinancialDashboardServiceTests
         Assert.Equal(1_200, after.CustomerCollectionsMinor);
         Assert.Equal(1_200, before.SupplierPaymentsMinor);
         Assert.Equal(1_200, after.SupplierPaymentsMinor);
+        Assert.Equal(1_200, reportBefore.CustomerCollectionsMinor);
+        Assert.Equal(1_200, reportAfter.CustomerCollectionsMinor);
+        Assert.Equal(1_200, reportBefore.SupplierPaymentsMinor);
+        Assert.Equal(1_200, reportAfter.SupplierPaymentsMinor);
         Assert.Equal(300, before.CurrentCustomerReceivablesMinor);
         Assert.Equal(100, after.CurrentCustomerReceivablesMinor);
         Assert.Equal(300, before.CurrentSupplierPayablesMinor);
@@ -514,6 +727,7 @@ public sealed class FinancialDashboardServiceTests
             PasswordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
             AuthenticationService = scope.ServiceProvider.GetRequiredService<IAuthenticationService>();
             Dashboard = scope.ServiceProvider.GetRequiredService<IFinancialDashboardService>();
+            Reports = scope.ServiceProvider.GetRequiredService<IFinancialReportsService>();
             Treasury = scope.ServiceProvider.GetRequiredService<ITreasuryService>();
             CustomerPaymentService = scope.ServiceProvider.GetRequiredService<ICustomerPaymentService>();
             SupplierPaymentService = scope.ServiceProvider.GetRequiredService<ISupplierPaymentService>();
@@ -524,6 +738,8 @@ public sealed class FinancialDashboardServiceTests
         public FinancialManagementDbContext Context { get; }
 
         public IFinancialDashboardService Dashboard { get; }
+
+        public IFinancialReportsService Reports { get; }
 
         public ITreasuryService Treasury { get; }
 
