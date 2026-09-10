@@ -26,6 +26,8 @@ public sealed class DueAlertsViewModel : ViewModelBase
     private int _totalSupplierAlertCount;
     private int _overdueCustomerCount;
     private int _overdueSupplierCount;
+    private int _dueTodayCount;
+    private int _upcomingCount;
     private bool _initialLoadRequested;
     private bool _isStopped;
     private CancellationTokenSource? _loadCancellation;
@@ -125,6 +127,26 @@ public sealed class DueAlertsViewModel : ViewModelBase
         get => _overdueSupplierCount;
         private set => SetProperty(ref _overdueSupplierCount, value);
     }
+
+    public int DueTodayCount
+    {
+        get => _dueTodayCount;
+        private set => SetProperty(ref _dueTodayCount, value);
+    }
+
+    public int UpcomingCount
+    {
+        get => _upcomingCount;
+        private set => SetProperty(ref _upcomingCount, value);
+    }
+
+    public int TotalOverdueCount => OverdueCustomerCount + OverdueSupplierCount;
+
+    public string OverdueSummary => FormatCount(TotalOverdueCount, "échéance en retard", "échéances en retard");
+
+    public string DueTodaySummary => FormatCount(DueTodayCount, "échéance aujourd'hui", "échéances aujourd'hui");
+
+    public string UpcomingSummary => FormatCount(UpcomingCount, "échéance à venir", "échéances à venir");
 
     public string CustomerSummary =>
         $"Clients — {FormatCount(TotalCustomerAlertCount, "alerte", "alertes")}, "
@@ -269,8 +291,15 @@ public sealed class DueAlertsViewModel : ViewModelBase
         TotalSupplierAlertCount = result.TotalSupplierAlertCount;
         OverdueCustomerCount = result.OverdueCustomerCount;
         OverdueSupplierCount = result.OverdueSupplierCount;
+        var allAlerts = result.CustomerAlerts.Concat(result.SupplierAlerts).ToArray();
+        DueTodayCount = allAlerts.Count(alert => alert.Status == FinancialDueAlertStatus.DueToday);
+        UpcomingCount = allAlerts.Count(alert => alert.Status == FinancialDueAlertStatus.Upcoming);
         OnPropertyChanged(nameof(CustomerSummary));
         OnPropertyChanged(nameof(SupplierSummary));
+        OnPropertyChanged(nameof(TotalOverdueCount));
+        OnPropertyChanged(nameof(OverdueSummary));
+        OnPropertyChanged(nameof(DueTodaySummary));
+        OnPropertyChanged(nameof(UpcomingSummary));
         HasAlerts = result.TotalCustomerAlertCount != 0 || result.TotalSupplierAlertCount != 0;
         CurrentDateDescription = result.CurrentDate is DateOnly currentDate
             ? $"Situation au {currentDate:dd/MM/yyyy}"
@@ -287,9 +316,15 @@ public sealed class DueAlertsViewModel : ViewModelBase
         TotalSupplierAlertCount = 0;
         OverdueCustomerCount = 0;
         OverdueSupplierCount = 0;
+        DueTodayCount = 0;
+        UpcomingCount = 0;
         CurrentDateDescription = string.Empty;
         OnPropertyChanged(nameof(CustomerSummary));
         OnPropertyChanged(nameof(SupplierSummary));
+        OnPropertyChanged(nameof(TotalOverdueCount));
+        OnPropertyChanged(nameof(OverdueSummary));
+        OnPropertyChanged(nameof(DueTodaySummary));
+        OnPropertyChanged(nameof(UpcomingSummary));
         HasAlerts = false;
         HasData = false;
     }

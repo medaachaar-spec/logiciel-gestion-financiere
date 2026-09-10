@@ -28,6 +28,7 @@ public sealed class ShellViewModel : ViewModelBase
     private readonly Lazy<CustomerPaymentsViewModel> _customerPayments;
     private readonly Lazy<SupplierPaymentsViewModel> _supplierPayments;
     private readonly Lazy<TreasuryViewModel> _treasury;
+    private readonly Lazy<ReportsViewModel> _reports;
     private readonly Lazy<AdministrationViewModel> _administration;
     private readonly CancellationTokenSource _navigationCancellation = new();
     private long _navigationRequestVersion;
@@ -48,6 +49,7 @@ public sealed class ShellViewModel : ViewModelBase
         Lazy<CustomerPaymentsViewModel> customerPaymentsViewModel,
         Lazy<SupplierPaymentsViewModel> supplierPaymentsViewModel,
         Lazy<TreasuryViewModel> treasuryViewModel,
+        Lazy<ReportsViewModel> reportsViewModel,
         Lazy<AdministrationViewModel> administrationViewModel)
     {
         ArgumentNullException.ThrowIfNull(currentUserSession);
@@ -63,6 +65,7 @@ public sealed class ShellViewModel : ViewModelBase
         ArgumentNullException.ThrowIfNull(customerPaymentsViewModel);
         ArgumentNullException.ThrowIfNull(supplierPaymentsViewModel);
         ArgumentNullException.ThrowIfNull(treasuryViewModel);
+        ArgumentNullException.ThrowIfNull(reportsViewModel);
         ArgumentNullException.ThrowIfNull(administrationViewModel);
 
         _currentUserSession = currentUserSession;
@@ -78,6 +81,7 @@ public sealed class ShellViewModel : ViewModelBase
         _customerPayments = customerPaymentsViewModel;
         _supplierPayments = supplierPaymentsViewModel;
         _treasury = treasuryViewModel;
+        _reports = reportsViewModel;
         _administration = administrationViewModel;
         NavigationItems = new ReadOnlyObservableCollection<NavigationItemViewModel>(
             _navigationItems);
@@ -109,7 +113,7 @@ public sealed class ShellViewModel : ViewModelBase
             "dashboard",
             string.Empty,
             requiredCapability: ResponsibleCapability.GlobalDashboard,
-            pageFactory: () => _dashboard.Value);
+            pageFactory: ResolveDashboardPage);
         AddNavigationItem(
             "Ventes",
             "\uE719",
@@ -166,6 +170,13 @@ public sealed class ShellViewModel : ViewModelBase
             "Le contenu métier de la caisse et de la banque sera intégré dans une prochaine étape.",
             requiredCapability: ResponsibleCapability.Treasury,
             pageFactory: () => _treasury.Value);
+        AddNavigationItem(
+            "Rapports",
+            "\uE9D2",
+            "reports",
+            string.Empty,
+            requiredCapability: ResponsibleCapability.Reports,
+            pageFactory: () => _reports.Value);
         AddNavigationItem(
             "Administration",
             "\uE713",
@@ -408,6 +419,7 @@ public sealed class ShellViewModel : ViewModelBase
         _navigateCommand.RaiseCanExecuteChanged();
         if (_dashboard.IsValueCreated)
         {
+            _dashboard.Value.NavigationRequested -= Dashboard_NavigationRequested;
             _dashboard.Value.Stop();
         }
 
@@ -451,6 +463,11 @@ public sealed class ShellViewModel : ViewModelBase
             _treasury.Value.Stop();
         }
 
+        if (_reports.IsValueCreated)
+        {
+            _reports.Value.Stop();
+        }
+
         if (_administration.IsValueCreated)
         {
             _administration.Value.AuthenticationInvalidated -= Administration_AuthenticationInvalidated;
@@ -491,6 +508,9 @@ public sealed class ShellViewModel : ViewModelBase
         var treasuryStop = _treasury.IsValueCreated
             ? _treasury.Value.StopAsync()
             : Task.CompletedTask;
+        var reportsStop = _reports.IsValueCreated
+            ? _reports.Value.StopAsync()
+            : Task.CompletedTask;
         var administrationStop = _administration.IsValueCreated
             ? _administration.Value.StopAsync()
             : Task.CompletedTask;
@@ -504,6 +524,7 @@ public sealed class ShellViewModel : ViewModelBase
             customerPaymentsStop,
             supplierPaymentsStop,
             treasuryStop,
+            reportsStop,
             administrationStop);
     }
 
@@ -514,6 +535,17 @@ public sealed class ShellViewModel : ViewModelBase
         viewModel.AuthenticationInvalidated += Administration_AuthenticationInvalidated;
         return viewModel;
     }
+
+    private DashboardViewModel ResolveDashboardPage()
+    {
+        var viewModel = _dashboard.Value;
+        viewModel.NavigationRequested -= Dashboard_NavigationRequested;
+        viewModel.NavigationRequested += Dashboard_NavigationRequested;
+        return viewModel;
+    }
+
+    private async void Dashboard_NavigationRequested(object? sender, string pageKey) =>
+        await NavigateToAsync(pageKey);
 
     private void Administration_AuthenticationInvalidated(object? sender, EventArgs e) => RequestLogout();
 

@@ -1,0 +1,632 @@
+<UserControl x:Class="FinancialManagement.Desktop.Views.ReportsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
+             xmlns:lvc="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+             xmlns:vm="clr-namespace:FinancialManagement.Desktop.ViewModels"
+             Language="fr-FR"
+             Loaded="ReportsView_OnLoaded">
+    <UserControl.Resources>
+        <Style x:Key="ReportCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="#E7EBEF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.06" Color="#17212B" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ReportFilterCardStyle" TargetType="Border" BasedOn="{StaticResource ReportCardStyle}">
+            <Setter Property="Background" Value="#FBFCFD" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Effect" Value="{x:Null}" />
+        </Style>
+
+        <Style x:Key="ReportsComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="11,8" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemSurface" Background="{TemplateBinding Background}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemSurface" Property="Background" Value="#EEF5FE" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemSurface" Property="Background" Value="#E1EEFC" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <DataTemplate x:Key="ReportsPeriodOptionTemplate">
+            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+        </DataTemplate>
+
+        <Style x:Key="ReportsComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource InputComboBoxStyle}">
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ReportsComboBoxItemStyle}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                CornerRadius="8">
+                                            <Grid>
+                                                <ContentPresenter Margin="12,0,34,0"
+                                                                  VerticalAlignment="Center"
+                                                                  Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                  ContentStringFormat="{Binding SelectionBoxItemStringFormat, RelativeSource={RelativeSource AncestorType=ComboBox}}" />
+                                                <Path HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,13,0"
+                                                      Data="M 0 0 L 4 4 L 8 0 Z"
+                                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" />
+                                            </Grid>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" PopupAnimation="Fade" Focusable="False">
+                                <Border Width="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="260" Margin="0,4,0,0" Padding="4"
+                                        Background="{StaticResource SurfaceBrush}"
+                                        BorderBrush="#D8E0E7" BorderThickness="1" CornerRadius="8">
+                                    <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="#91A8BC" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                <Setter Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.52" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ReportsScrollThumbStyle" TargetType="Thumb">
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="ThumbSurface" Background="#AAB5BF" CornerRadius="3" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbSurface" Property="Background" Value="#7E8D9A" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbSurface" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ReportsPageScrollBarStyle" TargetType="ScrollBar">
+            <Setter Property="Width" Value="9" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Focusable="False" Opacity="0" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb><Thumb Style="{StaticResource ReportsScrollThumbStyle}" /></Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Focusable="False" Opacity="0" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ScrollBar" BasedOn="{StaticResource ReportsPageScrollBarStyle}" />
+
+        <Style x:Key="ModernReportTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid KeyboardNavigation.TabNavigation="Local">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border HorizontalAlignment="Left" Background="#F3F5F7"
+                                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                    CornerRadius="11" Padding="4">
+                                <primitives:TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="1" />
+                            </Border>
+                            <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1"
+                                              Margin="0,14,0,0"
+                                              ContentSource="SelectedContent"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ModernReportTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="20,9" />
+            <Setter Property="Margin" Value="0,0,3,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabSurface" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabSurface" Property="Background" Value="#E8EEF5" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabSurface" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="TabSurface" Property="BorderBrush" Value="#173F66" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ReportMatrixColumnHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#F4F6F8" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="14,0" />
+            <Setter Property="BorderBrush" Value="#E1E6EB" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+
+        <Style x:Key="ReportMatrixRightColumnHeaderStyle" TargetType="DataGridColumnHeader"
+               BasedOn="{StaticResource ReportMatrixColumnHeaderStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+        </Style>
+
+        <Style x:Key="ReportMatrixGridStyle" TargetType="DataGrid">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="#E9EDF1" />
+            <Setter Property="VerticalGridLinesBrush" Value="Transparent" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowHeight" Value="46" />
+            <Setter Property="ColumnHeaderHeight" Value="42" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="CanUserResizeRows" Value="False" />
+            <Setter Property="CanUserReorderColumns" Value="False" />
+            <Setter Property="CanUserSortColumns" Value="False" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="SelectionMode" Value="Single" />
+            <Setter Property="SelectionUnit" Value="FullRow" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="ColumnHeaderStyle" Value="{StaticResource ReportMatrixColumnHeaderStyle}" />
+            <Setter Property="RowStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridRow">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F8FAFC" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#EEF5FE" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="CellStyle">
+                <Setter.Value>
+                    <Style TargetType="DataGridCell">
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Padding" Value="14,0" />
+                        <Setter Property="VerticalContentAlignment" Value="Center" />
+                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                        <Style.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ReportMatrixLabelStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style x:Key="ReportMatrixNumberStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        </Style>
+
+        <Style x:Key="ReportMatrixPeriodAStyle" TargetType="TextBlock" BasedOn="{StaticResource ReportMatrixNumberStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPositivePeriodAResult}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                    <Setter Property="FontWeight" Value="Bold" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsNegativePeriodAResult}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                    <Setter Property="FontWeight" Value="Bold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ReportMatrixPeriodBStyle" TargetType="TextBlock" BasedOn="{StaticResource ReportMatrixNumberStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPositivePeriodBResult}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                    <Setter Property="FontWeight" Value="Bold" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsNegativePeriodBResult}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                    <Setter Property="FontWeight" Value="Bold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <DataTemplate x:Key="ReportMetricTemplate" DataType="{x:Type vm:DashboardMetricViewModel}">
+            <Border Style="{StaticResource ReportCardStyle}" Margin="0,0,12,12" Padding="16" MinHeight="106">
+                <StackPanel>
+                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="11" FontWeight="SemiBold" />
+                    <Viewbox StretchDirection="DownOnly" HorizontalAlignment="Left" Margin="0,8,0,5">
+                        <TextBlock Text="{Binding Value}" FontSize="23">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPositiveResult}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                            <Setter Property="FontWeight" Value="Bold" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding IsNegativeResult}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                            <Setter Property="FontWeight" Value="Bold" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Viewbox>
+                    <TextBlock Text="{Binding Subtitle}" FontSize="10.5" Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Text="Analysez une période, comparez deux mois et suivez l'évolution annuelle"
+                           Style="{StaticResource BodyTextStyle}" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Width="130" VerticalAlignment="Center"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="Chargement…" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextAlignment="Right" />
+                <ProgressBar Height="4" Margin="0,6,0,0" IsIndeterminate="True" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" Background="#FFF1F1" BorderBrush="#F2CDCD" BorderThickness="1"
+                CornerRadius="10" Padding="11" Margin="0,0,4,10"
+                Visibility="{Binding HasError, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}" />
+        </Border>
+
+        <TabControl Grid.Row="2" Margin="0,0,4,0"
+                    Style="{StaticResource ModernReportTabControlStyle}"
+                    ItemContainerStyle="{StaticResource ModernReportTabItemStyle}">
+            <TabItem Header="Synthèse">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <StackPanel Margin="0,0,2,8">
+                        <Border Style="{StaticResource ReportFilterCardStyle}" Padding="13" Margin="0,0,0,12">
+                            <WrapPanel VerticalAlignment="Bottom">
+                                <StackPanel Margin="0,0,12,0">
+                                    <Label Content="Période analysée" Style="{StaticResource FieldLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding SynthesisPeriodOptions}"
+                                              SelectedItem="{Binding SelectedSynthesisPeriod}"
+                                              ItemTemplate="{StaticResource ReportsPeriodOptionTemplate}" Width="176" Height="36"
+                                              Style="{StaticResource ReportsComboBoxStyle}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,9,0" Visibility="{Binding IsCustomSynthesisPeriod, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Label Content="Date début" Style="{StaticResource FieldLabelStyle}" />
+                                    <DatePicker SelectedDate="{Binding CustomStartDate}" Width="145" Height="36" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,9,0" Visibility="{Binding IsCustomSynthesisPeriod, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Label Content="Date fin" Style="{StaticResource FieldLabelStyle}" />
+                                    <DatePicker SelectedDate="{Binding CustomEndDate}" Width="145" Height="36" />
+                                </StackPanel>
+                                <Button Content="Analyser" Command="{Binding LoadSynthesisCommand}"
+                                        Height="36" MinWidth="96" Padding="16,0" Margin="0,24,0,0"
+                                        Style="{StaticResource PrimaryButtonStyle}" />
+                            </WrapPanel>
+                        </Border>
+
+                        <StackPanel Visibility="{Binding HasSynthesisData, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="{Binding SynthesisPeriodDescription}" Foreground="{StaticResource TextSecondaryBrush}" Margin="2,0,0,8" />
+                            <ItemsControl ItemsSource="{Binding SynthesisMetrics}" ItemTemplate="{StaticResource ReportMetricTemplate}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <Grid Margin="0,2,0,10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="14" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource ReportCardStyle}" Padding="15" MinHeight="300">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Évolution de l'activité" FontSize="17" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="Ventes, achats et dépenses · Activité quotidienne"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <Grid Grid.Row="1" Margin="0,8,0,0">
+                                            <lvc:CartesianChart x:Name="ReportsSynthesisActivityChart"
+                                                Series="{Binding SynthesisActivitySeries}"
+                                                XAxes="{Binding SynthesisXAxes}" YAxes="{Binding MoneyYAxes}"
+                                                LegendPosition="Bottom" LegendTextSize="10" TooltipPosition="Top"
+                                                Margin="8,0,8,0"
+                                                Visibility="{Binding HasSynthesisActivityData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border x:Name="ReportsSynthesisActivityEmptyState"
+                                                    Background="#F8FAFC" CornerRadius="9" Margin="8,8,8,40" IsHitTestVisible="False"
+                                                    Visibility="{Binding HasSynthesisActivityData, Converter={StaticResource InverseBooleanConverter}}">
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock Text="&#xE9D2;" FontFamily="{StaticResource IconFontFamily}" FontSize="23"
+                                                               Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" />
+                                                    <TextBlock Text="Aucune activité sur cette période" Margin="0,7,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="2" Style="{StaticResource ReportCardStyle}" Padding="15" MinHeight="300">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Encaissements et paiements" FontSize="17" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="Flux clients et fournisseurs · Activité quotidienne"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <Grid Grid.Row="1" Margin="0,8,0,0">
+                                            <lvc:CartesianChart x:Name="ReportsSynthesisCashFlowChart"
+                                                Series="{Binding SynthesisCashFlowSeries}"
+                                                XAxes="{Binding SynthesisXAxes}" YAxes="{Binding MoneyYAxes}"
+                                                LegendPosition="Bottom" LegendTextSize="10" TooltipPosition="Top"
+                                                Margin="8,0,8,0"
+                                                Visibility="{Binding HasSynthesisCashFlowData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border x:Name="ReportsSynthesisCashFlowEmptyState"
+                                                    Background="#F8FAFC" CornerRadius="9" Margin="8,8,8,40" IsHitTestVisible="False"
+                                                    Visibility="{Binding HasSynthesisCashFlowData, Converter={StaticResource InverseBooleanConverter}}">
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock Text="&#xE8C7;" FontFamily="{StaticResource IconFontFamily}" FontSize="23"
+                                                               Foreground="{StaticResource SuccessBrush}" HorizontalAlignment="Center" />
+                                                    <TextBlock Text="Aucun flux sur cette période" Margin="0,7,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Comparaison">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <StackPanel Margin="0,0,2,8">
+                        <Border Style="{StaticResource ReportFilterCardStyle}" Padding="13" Margin="0,0,0,12">
+                            <WrapPanel VerticalAlignment="Bottom">
+                                <StackPanel Margin="0,0,14,0">
+                                    <Label Content="Mois analysé" Style="{StaticResource FieldLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding MonthOptions}" SelectedItem="{Binding PeriodA}"
+                                              ItemTemplate="{StaticResource ReportsPeriodOptionTemplate}" Width="190" Height="36"
+                                              Style="{StaticResource ReportsComboBoxStyle}" />
+                                </StackPanel>
+                                <StackPanel Margin="0,0,14,0">
+                                    <Label Content="Mois de comparaison" Style="{StaticResource FieldLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding MonthOptions}" SelectedItem="{Binding PeriodB}"
+                                              ItemTemplate="{StaticResource ReportsPeriodOptionTemplate}" Width="190" Height="36"
+                                              Style="{StaticResource ReportsComboBoxStyle}" />
+                                </StackPanel>
+                                <Button Content="Comparer" Command="{Binding LoadComparisonCommand}"
+                                        Height="36" MinWidth="100" Padding="16,0" Margin="0,24,0,0"
+                                        Style="{StaticResource PrimaryButtonStyle}" />
+                            </WrapPanel>
+                        </Border>
+
+                        <Border Style="{StaticResource ReportCardStyle}" Padding="8" VerticalAlignment="Top"
+                                Visibility="{Binding HasComparisonData, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <DataGrid ItemsSource="{Binding ComparisonRows}" Style="{StaticResource ReportMatrixGridStyle}"
+                                      VerticalAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Indicateur" Binding="{Binding Label}" Width="31*"
+                                                        ElementStyle="{StaticResource ReportMatrixLabelStyle}" />
+                                    <DataGridTextColumn Header="Mois analysé" Binding="{Binding PeriodAValue}" Width="22*"
+                                                        HeaderStyle="{StaticResource ReportMatrixRightColumnHeaderStyle}"
+                                                        ElementStyle="{StaticResource ReportMatrixPeriodAStyle}" />
+                                    <DataGridTextColumn Header="Mois de comparaison" Binding="{Binding PeriodBValue}" Width="28*"
+                                                        HeaderStyle="{StaticResource ReportMatrixRightColumnHeaderStyle}"
+                                                        ElementStyle="{StaticResource ReportMatrixPeriodBStyle}" />
+                                    <DataGridTextColumn Header="Variation" Binding="{Binding Variation}" Width="19*"
+                                                        HeaderStyle="{StaticResource ReportMatrixRightColumnHeaderStyle}"
+                                                        ElementStyle="{StaticResource ReportMatrixNumberStyle}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Évolution">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <StackPanel Margin="0,0,2,8">
+                        <Border Style="{StaticResource ReportFilterCardStyle}" Padding="13" Margin="0,0,0,12">
+                            <WrapPanel VerticalAlignment="Bottom">
+                                <StackPanel Margin="0,0,14,0">
+                                    <Label Content="Année analysée" Style="{StaticResource FieldLabelStyle}" />
+                                    <ComboBox ItemsSource="{Binding YearOptions}" SelectedItem="{Binding SelectedYear}"
+                                              Width="140" Height="36" Style="{StaticResource ReportsComboBoxStyle}" />
+                                </StackPanel>
+                                <Button Content="Afficher" Command="{Binding LoadEvolutionCommand}"
+                                        Height="36" MinWidth="100" Padding="16,0" Margin="0,24,0,0"
+                                        Style="{StaticResource PrimaryButtonStyle}" />
+                            </WrapPanel>
+                        </Border>
+
+                        <StackPanel Visibility="{Binding HasEvolutionData, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="{Binding EvolutionDescription}" Foreground="{StaticResource TextSecondaryBrush}" Margin="2,0,0,8" />
+                            <ItemsControl ItemsSource="{Binding EvolutionTotals}" ItemTemplate="{StaticResource ReportMetricTemplate}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                            <Grid Margin="0,2,0,10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="14" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Border Style="{StaticResource ReportCardStyle}" Padding="15" MinHeight="300">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Évolution de l'activité" FontSize="17" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="Ventes, achats et dépenses · Activité mensuelle"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <Grid Grid.Row="1" Margin="0,8,0,0">
+                                            <lvc:CartesianChart x:Name="ReportsEvolutionActivityChart"
+                                                Series="{Binding EvolutionActivitySeries}"
+                                                XAxes="{Binding EvolutionXAxes}" YAxes="{Binding MoneyYAxes}"
+                                                LegendPosition="Bottom" LegendTextSize="10" TooltipPosition="Top"
+                                                Margin="8,0,8,0"
+                                                Visibility="{Binding HasEvolutionActivityData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border x:Name="ReportsEvolutionActivityEmptyState"
+                                                    Background="#F8FAFC" CornerRadius="9" Margin="8,8,8,40" IsHitTestVisible="False"
+                                                    Visibility="{Binding HasEvolutionActivityData, Converter={StaticResource InverseBooleanConverter}}">
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock Text="&#xE9D2;" FontFamily="{StaticResource IconFontFamily}" FontSize="23"
+                                                               Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" />
+                                                    <TextBlock Text="Aucune activité pour cette année" Margin="0,7,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <Border Grid.Column="2" Style="{StaticResource ReportCardStyle}" Padding="15" MinHeight="300">
+                                    <Grid>
+                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="Encaissements et paiements" FontSize="17" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="Flux clients et fournisseurs · Activité mensuelle"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,4,0,0" />
+                                        </StackPanel>
+                                        <Grid Grid.Row="1" Margin="0,8,0,0">
+                                            <lvc:CartesianChart x:Name="ReportsEvolutionCashFlowChart"
+                                                Series="{Binding EvolutionCashFlowSeries}"
+                                                XAxes="{Binding EvolutionXAxes}" YAxes="{Binding MoneyYAxes}"
+                                                LegendPosition="Bottom" LegendTextSize="10" TooltipPosition="Top"
+                                                Margin="8,0,8,0"
+                                                Visibility="{Binding HasEvolutionCashFlowData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                            <Border x:Name="ReportsEvolutionCashFlowEmptyState"
+                                                    Background="#F8FAFC" CornerRadius="9" Margin="8,8,8,40" IsHitTestVisible="False"
+                                                    Visibility="{Binding HasEvolutionCashFlowData, Converter={StaticResource InverseBooleanConverter}}">
+                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock Text="&#xE8C7;" FontFamily="{StaticResource IconFontFamily}" FontSize="23"
+                                                               Foreground="{StaticResource SuccessBrush}" HorizontalAlignment="Center" />
+                                                    <TextBlock Text="Aucun flux pour cette année" Margin="0,7,0,0"
+                                                               Foreground="{StaticResource TextSecondaryBrush}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

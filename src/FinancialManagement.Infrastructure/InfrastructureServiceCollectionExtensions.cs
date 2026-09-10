@@ -88,7 +88,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ICustomerAdvanceService, CustomerAdvanceService>();
         services.AddScoped<ISupplierAdvanceService, SupplierAdvanceService>();
         services.AddScoped<ITreasuryService, TreasuryService>();
-        services.AddScoped<IFinancialDashboardService, FinancialDashboardService>();
+        services.AddScoped<FinancialDashboardService>();
+        services.AddScoped<IFinancialDashboardService>(provider =>
+            provider.GetRequiredService<FinancialDashboardService>());
+        services.AddScoped<IFinancialReportsService>(provider =>
+            provider.GetRequiredService<FinancialDashboardService>());
         services.AddScoped<IFinancialDueAlertService, FinancialDueAlertService>();
         services.TryAddSingleton<DatabaseBackupOptions>();
         services.AddSingleton<DatabaseMaintenanceLock>();
