@@ -1,4 +1,5 @@
 using FinancialManagement.Domain.Entities;
+using FinancialManagement.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -19,8 +20,8 @@ internal sealed class ExpenseCategoryConfiguration : IEntityTypeConfiguration<Ex
         builder.HasData(
             new ExpenseCategory
             {
-                Id = 1,
-                Name = "Salaires",
+                Id = ExpenseCategoryDefaults.SalaryId,
+                Name = ExpenseCategoryDefaults.SalaryName,
                 IsActive = true,
                 CreatedAtUtc = createdAtUtc
             },

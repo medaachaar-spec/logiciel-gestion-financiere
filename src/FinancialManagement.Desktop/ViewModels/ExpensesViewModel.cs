@@ -8,6 +8,7 @@ using FinancialManagement.Application.ExpenseCategories;
 using FinancialManagement.Application.Expenses;
 using FinancialManagement.Desktop.Formatting;
 using FinancialManagement.Desktop.Services;
+using FinancialManagement.Domain;
 using FinancialManagement.Domain.Enums;
 
 namespace FinancialManagement.Desktop.ViewModels;
@@ -26,6 +27,8 @@ public sealed class ExpensesViewModel : ViewModelBase
     private const string CategoryRequiredMessage =
         "Sélectionnez une catégorie avant d'enregistrer la dépense.";
     private const string PaymentMethodRequiredMessage = "Sélectionnez un moyen de paiement.";
+    private const string SalaryEmployeeRequiredMessage =
+        "Sélectionnez l'employé concerné pour une dépense de salaire.";
 
     private readonly IExpenseService _expenseService;
     private readonly IExpenseCategoryLookupService _categoryLookupService;
@@ -426,6 +429,10 @@ public sealed class ExpensesViewModel : ViewModelBase
             if (SetProperty(ref _selectedCategory, value))
             {
                 ClearFormValidationMessage();
+                OnPropertyChanged(nameof(IsEmployeeRequired));
+                OnPropertyChanged(nameof(EmployeeFieldLabel));
+                OnPropertyChanged(nameof(CanSubmitExpense));
+                _createExpenseRelayCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -479,6 +486,7 @@ public sealed class ExpensesViewModel : ViewModelBase
         {
             if (SetProperty(ref _selectedEmployee, value))
             {
+                ClearFormValidationMessage();
                 OnPropertyChanged(nameof(HasSelectedEmployee));
                 OnPropertyChanged(nameof(EmployeeSelectionDescription));
                 RaiseCommandCanExecuteChanged();
@@ -487,6 +495,11 @@ public sealed class ExpensesViewModel : ViewModelBase
     }
 
     public bool HasSelectedEmployee => SelectedEmployee is not null;
+    public bool IsEmployeeRequired =>
+        SelectedCategory?.ExpenseCategoryId == ExpenseCategoryDefaults.SalaryId;
+    public string EmployeeFieldLabel => IsEmployeeRequired
+        ? "Employé concerné *"
+        : "Employé concerné (facultatif)";
     public string EmployeeSelectionDescription => SelectedEmployee?.DisplayLabel ?? "Aucun employé concerné";
 
     public string Observation
@@ -1019,6 +1032,13 @@ public sealed class ExpensesViewModel : ViewModelBase
             return false;
         }
 
+        if (category.ExpenseCategoryId == ExpenseCategoryDefaults.SalaryId
+            && SelectedEmployee is null)
+        {
+            FormErrorMessage = SalaryEmployeeRequiredMessage;
+            return false;
+        }
+
         if (!MoneyParser.TryParsePositiveMinorUnits(Amount, out var amountMinor))
         {
             FormErrorMessage = InvalidAmountMessage;
@@ -1135,6 +1155,7 @@ public sealed class ExpensesViewModel : ViewModelBase
             CreateExpenseFailureReason.InvalidPaymentMethod => "Le moyen de paiement sélectionné n'est pas valide.",
             CreateExpenseFailureReason.ExpenseCategoryNotFound => "La catégorie sélectionnée n'existe plus.",
             CreateExpenseFailureReason.ExpenseCategoryInactive => "La catégorie sélectionnée n'est plus disponible.",
+            CreateExpenseFailureReason.ConcernedEmployeeRequired => SalaryEmployeeRequiredMessage,
             CreateExpenseFailureReason.ConcernedEmployeeNotFound => "L'employé sélectionné n'existe plus.",
             CreateExpenseFailureReason.ConcernedEmployeeNotEligible =>
                 "L'utilisateur sélectionné ne peut pas être associé à cette dépense.",

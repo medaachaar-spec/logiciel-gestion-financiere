@@ -25,7 +25,7 @@ public sealed class ExpenseCreateServiceTests
         await database.AuthenticateAsync(responsible);
 
         var result = await database.ExpenseService.CreateAsync(
-            new(1, 125_075, PaymentMethod.Cash, null, "Office expense"));
+            new(2, 125_075, PaymentMethod.Cash, null, "Office expense"));
 
         Assert.True(result.Success);
         Assert.Equal(CreateExpenseFailureReason.None, result.FailureReason);
@@ -110,7 +110,7 @@ public sealed class ExpenseCreateServiceTests
         await database.AuthenticateAsync(responsible);
 
         var result = await database.ExpenseService.CreateAsync(
-            new(1, long.MaxValue, PaymentMethod.Cash, null, null));
+            new(2, long.MaxValue, PaymentMethod.Cash, null, null));
 
         Assert.True(result.Success);
         Assert.Equal(long.MaxValue, result.AmountMinor);
@@ -127,7 +127,7 @@ public sealed class ExpenseCreateServiceTests
         await database.AuthenticateAsync(responsible);
 
         var result = await database.ExpenseService.CreateAsync(
-            new(1, 100, paymentMethod, null, null));
+            new(2, 100, paymentMethod, null, null));
 
         Assert.True(result.Success);
         Assert.Equal(paymentMethod, Assert.Single(database.Context.Expenses).PaymentMethod);
@@ -228,14 +228,29 @@ public sealed class ExpenseCreateServiceTests
     }
 
     [Fact]
-    public async Task Null_observation_and_no_concerned_employee_are_accepted()
+    public async Task Salary_without_concerned_employee_is_rejected()
+    {
+        using var database = new ExpenseTestDatabase();
+        var responsible = database.AddUser("salary-employee-required", UserRole.Responsable);
+        await database.AuthenticateAsync(responsible);
+
+        var result = await database.ExpenseService.CreateAsync(
+            new(1, 100, PaymentMethod.Cash, null, null));
+
+        Assert.False(result.Success);
+        Assert.Equal(CreateExpenseFailureReason.ConcernedEmployeeRequired, result.FailureReason);
+        Assert.Empty(database.Context.Expenses);
+    }
+
+    [Fact]
+    public async Task Non_salary_allows_null_observation_and_no_concerned_employee()
     {
         using var database = new ExpenseTestDatabase();
         var responsible = database.AddUser("optional-fields", UserRole.Responsable);
         await database.AuthenticateAsync(responsible);
 
         var result = await database.ExpenseService.CreateAsync(
-            new(1, 100, PaymentMethod.Cash, null, null));
+            new(2, 100, PaymentMethod.Cash, null, null));
 
         Assert.True(result.Success);
         var expense = Assert.Single(database.Context.Expenses);
@@ -251,9 +266,9 @@ public sealed class ExpenseCreateServiceTests
         await database.AuthenticateAsync(responsible);
 
         var first = await database.ExpenseService.CreateAsync(
-            new(1, 100, PaymentMethod.Cash, null, null));
+            new(2, 100, PaymentMethod.Cash, null, null));
         var second = await database.ExpenseService.CreateAsync(
-            new(1, 200, PaymentMethod.Cash, null, null));
+            new(2, 200, PaymentMethod.Cash, null, null));
 
         Assert.True(first.Success);
         Assert.True(second.Success);
@@ -747,12 +762,13 @@ public sealed class ExpenseTreasuryIntegrationTests
     {
         using var database = new ExpenseTestDatabase();
         var responsible = database.AddUser("cash-finance", UserRole.Responsable);
+        var employee = database.AddUser("salary-beneficiary", UserRole.Employe);
         await database.AuthenticateAsync(responsible);
         var opening = await database.TreasuryService.CreateOpeningBalanceAsync(
             new(ExpenseTestDatabase.BusinessDate, 50, 400));
 
         var create = await database.ExpenseService.CreateAsync(
-            new(1, 100, PaymentMethod.Cash, null, null));
+            new(1, 100, PaymentMethod.Cash, employee.Id, null));
         var summary = await database.TreasuryService.GetSummaryAsync();
 
         Assert.True(opening.Success);
@@ -779,7 +795,7 @@ public sealed class ExpenseTreasuryIntegrationTests
             new(ExpenseTestDatabase.BusinessDate, 400, 40));
 
         var create = await database.ExpenseService.CreateAsync(
-            new(1, 100, PaymentMethod.BankTransfer, null, null));
+            new(2, 100, PaymentMethod.BankTransfer, null, null));
         var summary = await database.TreasuryService.GetSummaryAsync();
 
         Assert.True(create.Success);
@@ -800,7 +816,7 @@ public sealed class ExpenseTreasuryIntegrationTests
         await database.AuthenticateAsync(responsible);
 
         var create = await database.ExpenseService.CreateAsync(
-            new(1, 100, PaymentMethod.Cash, null, null));
+            new(2, 100, PaymentMethod.Cash, null, null));
         var summary = await database.TreasuryService.GetSummaryAsync();
 
         Assert.True(create.Success);
@@ -820,7 +836,7 @@ public sealed class ExpenseDashboardIntegrationTests
         await database.AuthenticateAsync(responsible);
 
         var create = await database.ExpenseService.CreateAsync(
-            new(1, 9_000_000_000, PaymentMethod.Cash, null, null));
+            new(2, 9_000_000_000, PaymentMethod.Cash, null, null));
         var inPeriod = await database.DashboardService.GetAsync(
             new(ExpenseTestDatabase.BusinessDate, ExpenseTestDatabase.BusinessDate));
         var outside = await database.DashboardService.GetAsync(

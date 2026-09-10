@@ -93,7 +93,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.TryAddSingleton<DatabaseBackupOptions>();
         services.AddSingleton<DatabaseMaintenanceLock>();
         services.AddSingleton<DatabaseRestoreTestHook>();
-        services.AddScoped<IDatabaseBackupService, DatabaseBackupService>();
+        services.AddScoped<DatabaseBackupService>();
+        services.AddScoped<IDatabaseBackupService>(serviceProvider =>
+            serviceProvider.GetRequiredService<DatabaseBackupService>());
+        services.AddScoped<IStartupDatabaseBackupService>(serviceProvider =>
+            serviceProvider.GetRequiredService<DatabaseBackupService>());
 
         return services;
     }

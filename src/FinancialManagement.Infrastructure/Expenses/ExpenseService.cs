@@ -4,6 +4,7 @@ using FinancialManagement.Application.Expenses;
 using FinancialManagement.Application.Sales;
 using FinancialManagement.Domain.Entities;
 using FinancialManagement.Domain.Enums;
+using FinancialManagement.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinancialManagement.Infrastructure.Expenses;
@@ -70,6 +71,14 @@ internal sealed class ExpenseService(
         {
             return CreateExpenseResult.Failed(
                 CreateExpenseFailureReason.ExpenseCategoryInactive,
+                command.AmountMinor);
+        }
+
+        if (command.ExpenseCategoryId == ExpenseCategoryDefaults.SalaryId
+            && command.ConcernedEmployeeUserId is null)
+        {
+            return CreateExpenseResult.Failed(
+                CreateExpenseFailureReason.ConcernedEmployeeRequired,
                 command.AmountMinor);
         }
 
