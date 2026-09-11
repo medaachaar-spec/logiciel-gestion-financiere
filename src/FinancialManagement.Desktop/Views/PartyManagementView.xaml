@@ -91,7 +91,11 @@
                                  TabIndex="0"
                                  Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource InputTextBoxStyle}"
-                                 AutomationProperties.Name="{Binding SearchAutomationName}" />
+                                 AutomationProperties.Name="{Binding SearchAutomationName}">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplySearchCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
                     </StackPanel>
                     <Button Grid.Column="1"
                             Height="36"
@@ -247,7 +251,8 @@
 
         <Grid Background="#66000000"
               Visibility="{Binding IsFormVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Background="{StaticResource SurfaceBrush}"
+            <Border x:Name="PartyFormDialog"
+                    Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
@@ -262,16 +267,7 @@
                               Padding="22">
                     <StackPanel>
                         <Grid Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
                             <TextBlock Text="{Binding FormTitle}" FontSize="22" FontWeight="SemiBold" />
-                            <Button Grid.Column="1" Width="90" Height="34"
-                                    Content="Annuler"
-                                    Command="{Binding CancelFormCommand}"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    AutomationProperties.Name="Fermer le formulaire" />
                         </Grid>
 
                         <TextBlock Text="{Binding FormErrorMessage}"

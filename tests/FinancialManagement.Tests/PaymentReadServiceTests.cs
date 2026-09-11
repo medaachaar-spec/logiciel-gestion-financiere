@@ -5,8 +5,10 @@ using FinancialManagement.Domain.Entities;
 using FinancialManagement.Domain.Enums;
 using FinancialManagement.Infrastructure;
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Data.Common;
 
 namespace FinancialManagement.Tests;
 
@@ -812,7 +814,10 @@ internal sealed class PaymentReadTestDatabase : IDisposable
             Path.GetTempPath(),
             $"FinancialManagement-PaymentRead-{Guid.NewGuid():N}.db");
         var services = new ServiceCollection();
+        CommandCounter = new CountingDbCommandInterceptor();
         services.AddInfrastructure($"Data Source={databasePath};Pooling=False");
+        services.AddDbContext<FinancialManagementDbContext>(options =>
+            options.AddInterceptors(CommandCounter));
         serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
@@ -825,6 +830,10 @@ internal sealed class PaymentReadTestDatabase : IDisposable
         authenticationService = scope.ServiceProvider.GetRequiredService<IAuthenticationService>();
         CustomerPaymentService = scope.ServiceProvider.GetRequiredService<ICustomerPaymentService>();
         SupplierPaymentService = scope.ServiceProvider.GetRequiredService<ISupplierPaymentService>();
+        CustomerObligationReadService = scope.ServiceProvider
+            .GetRequiredService<ICustomerPaymentObligationReadService>();
+        SupplierObligationReadService = scope.ServiceProvider
+            .GetRequiredService<ISupplierPaymentObligationReadService>();
     }
 
     public FinancialManagementDbContext Context { get; }
@@ -832,6 +841,12 @@ internal sealed class PaymentReadTestDatabase : IDisposable
     public ICustomerPaymentService CustomerPaymentService { get; }
 
     public ISupplierPaymentService SupplierPaymentService { get; }
+
+    public ICustomerPaymentObligationReadService CustomerObligationReadService { get; }
+
+    public ISupplierPaymentObligationReadService SupplierObligationReadService { get; }
+
+    public CountingDbCommandInterceptor CommandCounter { get; }
 
     public User AddUser(string username, UserRole role)
     {
@@ -965,7 +980,8 @@ internal sealed class PaymentReadTestDatabase : IDisposable
         long amountMinor,
         long? clientId,
         PaymentMethod paymentMethod = PaymentMethod.Cash,
-        string? observation = null)
+        string? observation = null,
+        DateTimeOffset? createdAtUtc = null)
     {
         var payment = new CustomerPayment
         {
@@ -976,7 +992,7 @@ internal sealed class PaymentReadTestDatabase : IDisposable
             PaymentMethod = paymentMethod,
             Observation = observation,
             CreatedByUserId = creator.Id,
-            CreatedAtUtc = TestUtc
+            CreatedAtUtc = createdAtUtc ?? TestUtc
         };
         Context.CustomerPayments.Add(payment);
         Context.SaveChanges();
@@ -990,7 +1006,8 @@ internal sealed class PaymentReadTestDatabase : IDisposable
         long amountMinor,
         long supplierId,
         PaymentMethod paymentMethod = PaymentMethod.Cash,
-        string? observation = null)
+        string? observation = null,
+        DateTimeOffset? createdAtUtc = null)
     {
         var payment = new SupplierPayment
         {
@@ -1001,7 +1018,7 @@ internal sealed class PaymentReadTestDatabase : IDisposable
             PaymentMethod = paymentMethod,
             Observation = observation,
             CreatedByUserId = creator.Id,
-            CreatedAtUtc = TestUtc
+            CreatedAtUtc = createdAtUtc ?? TestUtc
         };
         Context.SupplierPayments.Add(payment);
         Context.SaveChanges();
@@ -1085,5 +1102,54 @@ internal sealed class PaymentReadTestDatabase : IDisposable
                 File.Delete(path);
             }
         }
+    }
+}
+
+internal sealed class CountingDbCommandInterceptor : DbCommandInterceptor
+{
+    private int _commandCount;
+
+    public int CommandCount => Volatile.Read(ref _commandCount);
+
+    public void Reset() => Interlocked.Exchange(ref _commandCount, 0);
+
+    private void Increment() => Interlocked.Increment(ref _commandCount);
+
+    public override InterceptionResult<DbDataReader> ReaderExecuting(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result)
+    {
+        Increment();
+        return base.ReaderExecuting(command, eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<DbDataReader> result,
+        CancellationToken cancellationToken = default)
+    {
+        Increment();
+        return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+    }
+
+    public override InterceptionResult<object> ScalarExecuting(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<object> result)
+    {
+        Increment();
+        return base.ScalarExecuting(command, eventData, result);
+    }
+
+    public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(
+        DbCommand command,
+        CommandEventData eventData,
+        InterceptionResult<object> result,
+        CancellationToken cancellationToken = default)
+    {
+        Increment();
+        return base.ScalarExecutingAsync(command, eventData, result, cancellationToken);
     }
 }

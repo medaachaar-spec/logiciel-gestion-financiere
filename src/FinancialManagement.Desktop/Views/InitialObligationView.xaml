@@ -54,9 +54,13 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <TextBox Height="34" Text="{Binding FilterPartySearchText, UpdateSourceTrigger=PropertyChanged}"
+                <TextBox x:Name="InitialFilterPartySearchInput" Height="34" Text="{Binding FilterPartySearchText, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource InputTextBoxStyle}"
-                         AutomationProperties.Name="Rechercher un tiers pour filtrer" />
+                         AutomationProperties.Name="Rechercher un tiers pour filtrer">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding SearchFilterPartiesCommand}" />
+                    </TextBox.InputBindings>
+                </TextBox>
                 <ComboBox Grid.Column="1" Height="34" Margin="8,0,0,0"
                           ItemsSource="{Binding FilterPartyResults}"
                           SelectedItem="{Binding SelectedFilterPartyResult}"
@@ -134,21 +138,16 @@
 
         <Grid Background="#66000000"
               Visibility="{Binding IsCreateVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Margin="18" Padding="22" MaxWidth="760" MaxHeight="570"
+            <Border x:Name="InitialObligationCreateDialog"
+                    Margin="18" Padding="22" MaxWidth="760" MaxHeight="570"
                     HorizontalAlignment="Center" VerticalAlignment="Stretch"
                     Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1" CornerRadius="12" KeyboardNavigation.TabNavigation="Cycle">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
                             <TextBlock Text="{Binding Title, StringFormat=Nouvelle saisie — {0}}"
                                        FontSize="21" FontWeight="SemiBold" />
-                            <Button Grid.Column="1" Width="90" Height="32" Content="Annuler"
-                                    Command="{Binding CancelCreateCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                         </Grid>
 
                         <Border Margin="0,12,0,0" Padding="9" Background="#FFF7F7" CornerRadius="6"
@@ -166,7 +165,11 @@
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="PartySearchInput" Height="36" TabIndex="10"
                                      Text="{Binding PartySearchText, UpdateSourceTrigger=PropertyChanged}"
-                                     Style="{StaticResource InputTextBoxStyle}" />
+                                     Style="{StaticResource InputTextBoxStyle}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding SearchPartiesCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
                             <Button Grid.Column="1" Width="110" Height="36" Margin="10,0,0,0"
                                     Content="Rechercher" Command="{Binding SearchPartiesCommand}"
                                     Style="{StaticResource SecondaryButtonStyle}" />

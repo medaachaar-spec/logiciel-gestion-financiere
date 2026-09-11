@@ -21,8 +21,65 @@
         <Style x:Key="PaymentCellTextStyle" TargetType="TextBlock">
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="7,0" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
             <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Text}" />
+        </Style>
+        <Style x:Key="PaymentNumericCellTextStyle"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource PaymentCellTextStyle}">
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style x:Key="PaymentNumericColumnHeaderStyle"
+               TargetType="DataGridColumnHeader">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="Padding" Value="7,0" />
+        </Style>
+        <Style x:Key="PaymentHistoryColumnHeaderStyle"
+               TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="{StaticResource BackgroundBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="PaymentHistoryDataGridStyle" TargetType="DataGrid">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource BorderBrush}" />
+            <Setter Property="RowBackground" Value="{StaticResource SurfaceBrush}" />
+            <Setter Property="AlternatingRowBackground" Value="{StaticResource BackgroundBrush}" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="RowHeaderWidth" Value="0" />
+            <Setter Property="RowHeight" Value="38" />
+            <Setter Property="ColumnHeaderHeight" Value="38" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="ColumnHeaderStyle" Value="{StaticResource PaymentHistoryColumnHeaderStyle}" />
+        </Style>
+        <Style x:Key="PaymentHistoryCellTextStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="9,0" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="ToolTip" Value="{Binding RelativeSource={RelativeSource Self}, Path=Text}" />
+        </Style>
+        <Style x:Key="PaymentHistoryNumericCellTextStyle"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource PaymentHistoryCellTextStyle}">
+            <Setter Property="TextAlignment" Value="Right" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+        </Style>
+        <Style x:Key="PaymentHistoryNumericColumnHeaderStyle"
+               TargetType="DataGridColumnHeader"
+               BasedOn="{StaticResource PaymentHistoryColumnHeaderStyle}">
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="Padding" Value="9,0" />
         </Style>
         <Style x:Key="PaymentSummaryLabelStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
@@ -86,7 +143,7 @@
                         <ColumnDefinition Width="*" MinWidth="130" />
                         <ColumnDefinition Width="132" />
                         <ColumnDefinition Width="132" />
-                        <ColumnDefinition Width="160" />
+                        <ColumnDefinition Width="190" />
                         <ColumnDefinition Width="96" />
                         <ColumnDefinition Width="105" />
                     </Grid.ColumnDefinitions>
@@ -97,7 +154,11 @@
                                  TabIndex="0"
                                  Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource InputTextBoxStyle}"
-                                 AutomationProperties.Name="Rechercher un paiement" />
+                                 AutomationProperties.Name="Rechercher un paiement">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyFiltersCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="0,0,10,0">
                         <Label Content="Date début" Target="{Binding ElementName=PaymentFromDateInput}" Style="{StaticResource FieldLabelStyle}" />
@@ -116,12 +177,12 @@
                                     Style="{StaticResource InputDatePickerStyle}" />
                     </StackPanel>
                     <StackPanel Grid.Column="3" Margin="0,0,10,0">
-                        <Label Content="Mode" Target="{Binding ElementName=PaymentMethodFilter}" Style="{StaticResource FieldLabelStyle}" />
-                        <ComboBox x:Name="PaymentMethodFilter"
+                        <Label Content="Statut" Target="{Binding ElementName=PaymentStatusFilter}" Style="{StaticResource FieldLabelStyle}" />
+                        <ComboBox x:Name="PaymentStatusFilter"
                                   TabIndex="3"
-                                  ItemsSource="{Binding FilterPaymentMethods}"
+                                  ItemsSource="{Binding FilterStatuses}"
                                   DisplayMemberPath="DisplayName"
-                                  SelectedItem="{Binding SelectedFilterPaymentMethod, Mode=TwoWay}"
+                                  SelectedItem="{Binding SelectedFilterStatus, Mode=TwoWay}"
                                   Style="{StaticResource InputComboBoxStyle}" />
                     </StackPanel>
                     <Button Grid.Column="4"
@@ -144,7 +205,7 @@
             <StackPanel Grid.Row="2">
                 <StackPanel Margin="0,0,0,8"
                             Visibility="{Binding IsLoading, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <TextBlock Text="Chargement des paiements…" Margin="0,0,0,5" />
+                    <TextBlock Text="Chargement des obligations…" Margin="0,0,0,5" />
                     <ProgressBar Height="4" IsIndeterminate="True" />
                 </StackPanel>
                 <Border Background="{StaticResource SuccessSoftBrush}"
@@ -162,7 +223,8 @@
             </StackPanel>
 
             <Grid Grid.Row="3">
-                <DataGrid ItemsSource="{Binding Payments}"
+                <DataGrid x:Name="PaymentObligationDataGrid"
+                          ItemsSource="{Binding Payments}"
                           Style="{StaticResource PaymentDataGridStyle}"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
@@ -178,35 +240,59 @@
                           ScrollViewer.CanContentScroll="True"
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
                           ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                          AutomationProperties.Name="Liste des paiements"
+                          AutomationProperties.Name="Liste des obligations"
                           Visibility="{Binding HasPayments, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Référence" Binding="{Binding Reference}" Width="1.05*" ElementStyle="{StaticResource PaymentCellTextStyle}" />
-                        <DataGridTextColumn Header="Date" Binding="{Binding PaymentDate}" Width="88" ElementStyle="{StaticResource PaymentCellTextStyle}" />
-                        <DataGridTemplateColumn Width="1.2*">
+                        <DataGridTextColumn Header="Date" Binding="{Binding BusinessDate}" Width="86" ElementStyle="{StaticResource PaymentCellTextStyle}" />
+                        <DataGridTemplateColumn Width="1.15*">
                             <DataGridTemplateColumn.Header>
                                 <TextBlock Text="{Binding DataContext.PartyColumnHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding PartyName}" Style="{StaticResource PaymentCellTextStyle}" />
+                                    <TextBlock Text="{Binding PartyName}" Style="{StaticResource PaymentCellTextStyle}" VerticalAlignment="Center" />
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="Montant" Binding="{Binding Amount}" Width="96" ElementStyle="{StaticResource PaymentCellTextStyle}" />
-                        <DataGridTextColumn Header="Affecté" Binding="{Binding AllocatedAmount}" Width="92" ElementStyle="{StaticResource PaymentCellTextStyle}" />
-                        <DataGridTextColumn Header="Non affecté / Avance" Binding="{Binding UnallocatedAmount}" Width="128" ElementStyle="{StaticResource PaymentCellTextStyle}" />
-                        <DataGridTextColumn Header="Mode" Binding="{Binding PaymentMethod}" Width="130" ElementStyle="{StaticResource PaymentCellTextStyle}" />
-                        <DataGridTemplateColumn Header="Action" Width="76">
+                        <DataGridTemplateColumn Width="1.1*">
+                            <DataGridTemplateColumn.Header>
+                                <TextBlock Text="{Binding DataContext.ObligationReferenceHeader, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                            </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Height="28"
-                                            Margin="4"
-                                            Content="Voir"
-                                            Command="{Binding DataContext.OpenDetailCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                            CommandParameter="{Binding}"
-                                            Style="{StaticResource SecondaryButtonStyle}"
-                                            AutomationProperties.Name="Ouvrir le détail du paiement" />
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Reference}" Style="{StaticResource PaymentCellTextStyle}" />
+                                        <TextBlock Text="{Binding TargetType}" Margin="7,-3,7,0" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Montant" Binding="{Binding OriginalAmount}" Width="100" ElementStyle="{StaticResource PaymentNumericCellTextStyle}" HeaderStyle="{StaticResource PaymentNumericColumnHeaderStyle}" />
+                        <DataGridTextColumn Header="Payé" Binding="{Binding PaidAmount}" Width="92" ElementStyle="{StaticResource PaymentNumericCellTextStyle}" HeaderStyle="{StaticResource PaymentNumericColumnHeaderStyle}" />
+                        <DataGridTextColumn Header="Reste à payer" Binding="{Binding RemainingAmount}" Width="112" ElementStyle="{StaticResource PaymentNumericCellTextStyle}" HeaderStyle="{StaticResource PaymentNumericColumnHeaderStyle}" />
+                        <DataGridTextColumn Header="Statut" Binding="{Binding Status}" Width="145" ElementStyle="{StaticResource PaymentCellTextStyle}" />
+                        <DataGridTemplateColumn Header="Actions" Width="166">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Button Height="28"
+                                                Width="68"
+                                                Margin="3"
+                                                Content="Détails"
+                                                Command="{Binding DataContext.OpenDetailCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                AutomationProperties.Name="Ouvrir le détail de l'obligation" />
+                                        <Button Height="28"
+                                                Width="78"
+                                                Margin="3"
+                                                Content="{Binding DataContext.PaymentActionLabel, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Command="{Binding DataContext.ShowCreateForObligationCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource PrimaryButtonStyle}"
+                                                Visibility="{Binding HasRemaining, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                AutomationProperties.Name="Créer un règlement pour cette obligation" />
+                                    </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -243,7 +329,8 @@
         <!-- Création -->
         <Grid Background="#66000000"
               Visibility="{Binding IsCreateVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Background="{StaticResource SurfaceBrush}"
+            <Border x:Name="PaymentCreateDialog"
+                    Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
@@ -261,16 +348,11 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid Grid.Row="0" Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="{Binding NewPaymentLabel}" FontSize="21" FontWeight="SemiBold" />
-                            <TextBlock Text="Choisissez le tiers et affectez explicitement le paiement aux obligations."
+                            <TextBlock Text="{Binding CreateInstruction}"
                                        Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0" />
                         </StackPanel>
-                        <Button Grid.Column="1" Width="90" Height="32" Content="Annuler" Command="{Binding CancelCreateCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                     </Grid>
 
                     <StackPanel Grid.Row="1">
@@ -285,7 +367,8 @@
                                 <ColumnDefinition Width="16" />
                                 <ColumnDefinition Width="0.75*" />
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="10">
+                            <Border Grid.Column="0" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="10"
+                                    IsEnabled="{Binding CanChangeCreateTarget}">
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -296,7 +379,11 @@
                                             <Label Content="{Binding PartyColumnHeader, StringFormat=Rechercher : {0}}" Target="{Binding ElementName=PartySearchInput}" Style="{StaticResource FieldLabelStyle}" />
                                             <TextBox x:Name="PartySearchInput" Height="34" TabIndex="10"
                                                      Text="{Binding PartySearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                     Style="{StaticResource InputTextBoxStyle}" />
+                                                     Style="{StaticResource InputTextBoxStyle}">
+                                                <TextBox.InputBindings>
+                                                    <KeyBinding Key="Enter" Command="{Binding SearchPartiesCommand}" />
+                                                </TextBox.InputBindings>
+                                            </TextBox>
                                         </StackPanel>
                                         <Button Grid.Column="1" Height="34" Margin="0,24,0,0" Content="Rechercher" Command="{Binding SearchPartiesCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                                     </Grid>
@@ -359,7 +446,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <Grid>
+                        <Grid IsEnabled="{Binding CanChangeCreateTarget}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="98" />
@@ -368,7 +455,11 @@
                                 <Label Content="Rechercher une obligation" Target="{Binding ElementName=CreateObligationSearchInput}" Style="{StaticResource FieldLabelStyle}" />
                                 <TextBox x:Name="CreateObligationSearchInput" Height="32"
                                          Text="{Binding ObligationSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         Style="{StaticResource InputTextBoxStyle}" />
+                                         Style="{StaticResource InputTextBoxStyle}">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding SearchObligationsCommand}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
                             </StackPanel>
                             <Button Grid.Column="1" Height="32" Margin="0,24,0,0" Content="Actualiser" Command="{Binding SearchObligationsCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                         </Grid>
@@ -441,55 +532,57 @@
         <!-- Détail -->
         <Grid Background="#66000000"
               Visibility="{Binding IsDetailVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Background="{StaticResource SurfaceBrush}"
+            <Border x:Name="PaymentDetailDialog"
+                    Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
                     Margin="24"
-                    MaxWidth="820"
-                    MaxHeight="560"
+                    MaxWidth="940"
+                    MaxHeight="570"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Stretch"
+                    VerticalAlignment="Center"
                     KeyboardNavigation.TabNavigation="Cycle">
                 <Grid Margin="22">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="Détail du paiement" FontSize="21" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding DetailReference}" Margin="0,3,0,0" Foreground="{StaticResource TextSecondaryBrush}" />
-                        </StackPanel>
-                        <Button Grid.Column="1" Width="82" Height="32" Content="Fermer" Command="{Binding CloseDetailCommand}" Style="{StaticResource SecondaryButtonStyle}" />
-                    </Grid>
+                    <StackPanel>
+                        <TextBlock Text="{Binding DetailTitle}" FontSize="21" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding DetailReference}" Margin="0,3,0,0" Foreground="{StaticResource TextSecondaryBrush}" />
+                    </StackPanel>
                     <TextBlock Grid.Row="1" Text="{Binding WorkflowErrorMessage}" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="{Binding HasWorkflowError, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                    <UniformGrid Grid.Row="2" Columns="4" Margin="0,14,0,12">
-                        <StackPanel Margin="0,0,12,8"><TextBlock Text="Date" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailDate}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
-                        <StackPanel Margin="0,0,12,8"><TextBlock Text="Client / Fournisseur" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailParty}" Style="{StaticResource PaymentSummaryValueStyle}" TextTrimming="CharacterEllipsis" /></StackPanel>
-                        <StackPanel Margin="0,0,12,8"><TextBlock Text="Montant" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailAmount}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
-                        <StackPanel Margin="0,0,0,8"><TextBlock Text="Mode" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailPaymentMethod}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
-                        <StackPanel Margin="0,0,12,0"><TextBlock Text="Affecté" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailAllocatedAmount}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
-                        <StackPanel Margin="0,0,12,0"><TextBlock Text="Non affecté / Avance" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailUnallocatedAmount}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
-                        <StackPanel Margin="0,0,12,0"><TextBlock Text="Observation" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailObservation}" Style="{StaticResource PaymentSummaryValueStyle}" TextTrimming="CharacterEllipsis" ToolTip="{Binding DetailObservation}" /></StackPanel>
-                    </UniformGrid>
-                    <DataGrid Grid.Row="3" ItemsSource="{Binding DetailAllocations}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column" RowHeaderWidth="0" RowHeight="36" ScrollViewer.VerticalScrollBarVisibility="Auto" Visibility="{Binding HasDetailAllocations, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Border Grid.Row="2" Background="{StaticResource BackgroundBrush}" CornerRadius="8" Padding="12" Margin="0,14,0,12">
+                        <UniformGrid Columns="4">
+                            <StackPanel Margin="0,0,12,8"><TextBlock x:Name="PaymentDetailPartyLabel" Text="{Binding DetailPartyLabel}" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailParty}" Style="{StaticResource PaymentSummaryValueStyle}" TextTrimming="CharacterEllipsis" /></StackPanel>
+                            <StackPanel Margin="0,0,12,8"><TextBlock Text="Origine" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailTargetType}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
+                            <StackPanel Margin="0,0,12,8"><TextBlock Text="Date" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailDate}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
+                            <StackPanel Margin="0,0,0,8"><TextBlock Text="Statut" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailStatus}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
+                            <StackPanel Margin="0,0,12,0"><TextBlock Text="Montant initial" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailAmount}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
+                            <StackPanel Margin="0,0,12,0"><TextBlock Text="Total payé" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailPaidAmount}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
+                            <StackPanel Margin="0,0,12,0"><TextBlock Text="Reste actuel" Style="{StaticResource PaymentSummaryLabelStyle}" /><TextBlock Text="{Binding DetailRemainingAmount}" Style="{StaticResource PaymentSummaryValueStyle}" /></StackPanel>
+                        </UniformGrid>
+                    </Border>
+                    <TextBlock Grid.Row="3" Text="{Binding DetailHistoryTitle}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,7" />
+                    <DataGrid x:Name="PaymentHistoryDataGrid" Grid.Row="4" ItemsSource="{Binding DetailHistory}" Style="{StaticResource PaymentHistoryDataGridStyle}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserResizeRows="False" CanUserSortColumns="False" SelectionMode="Single" SelectionUnit="FullRow" MaxHeight="266" ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasDetailHistory, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Type" Binding="{Binding TargetType}" Width="150" />
-                            <DataGridTextColumn Header="Référence" Binding="{Binding TargetReference}" Width="*" />
-                            <DataGridTextColumn Header="Montant initial" Binding="{Binding OriginalAmount}" Width="120" />
-                            <DataGridTextColumn Header="Montant affecté" Binding="{Binding AllocatedAmount}" Width="120" />
+                            <DataGridTextColumn Header="Date / heure" Binding="{Binding PaymentTimestamp}" Width="125" ElementStyle="{StaticResource PaymentHistoryCellTextStyle}" />
+                            <DataGridTextColumn Header="Référence paiement" Binding="{Binding PaymentReference}" Width="*" ElementStyle="{StaticResource PaymentHistoryCellTextStyle}" />
+                            <DataGridTextColumn Header="Mode" Binding="{Binding PaymentMethod}" Width="130" ElementStyle="{StaticResource PaymentHistoryCellTextStyle}" />
+                            <DataGridTextColumn Header="Montant affecté" Binding="{Binding AllocatedAmount}" Width="120" ElementStyle="{StaticResource PaymentHistoryNumericCellTextStyle}" HeaderStyle="{StaticResource PaymentHistoryNumericColumnHeaderStyle}" />
+                            <DataGridTextColumn Header="Cumul payé" Binding="{Binding CumulativePaidAmount}" Width="105" ElementStyle="{StaticResource PaymentHistoryNumericCellTextStyle}" HeaderStyle="{StaticResource PaymentHistoryNumericColumnHeaderStyle}" />
+                            <DataGridTextColumn Header="Reste après paiement" Binding="{Binding RemainingAfterPayment}" Width="140" ElementStyle="{StaticResource PaymentHistoryNumericCellTextStyle}" HeaderStyle="{StaticResource PaymentHistoryNumericColumnHeaderStyle}" />
                         </DataGrid.Columns>
                     </DataGrid>
-                    <Grid Grid.Row="4" Margin="0,14,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="Aucune affectation." VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Visibility="{Binding HasDetailAllocations, Converter={StaticResource InverseBooleanConverter}}" />
-                        <Button Grid.Column="1" Width="142" Height="34" Margin="0,0,8,0" Content="Affecter l'avance" Command="{Binding ShowAdvanceCommand}" Style="{StaticResource PrimaryButtonStyle}" Visibility="{Binding CanApplySelectedAdvance, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                        <Button Grid.Column="2" Width="86" Height="34" Content="Fermer" Command="{Binding CloseDetailCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                    <Grid Grid.Row="5" Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="Aucun règlement affecté à cette obligation." VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Visibility="{Binding HasDetailHistory, Converter={StaticResource InverseBooleanConverter}}" />
+                        <Button Grid.Column="1" Width="86" Height="34" Content="Fermer" Command="{Binding CloseDetailCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                     </Grid>
                 </Grid>
             </Border>
@@ -498,7 +591,8 @@
         <!-- Affectation d'avance -->
         <Grid Background="#66000000"
               Visibility="{Binding IsAdvanceVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Background="{StaticResource SurfaceBrush}"
+            <Border x:Name="PaymentAdvanceDialog"
+                    Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
@@ -511,19 +605,21 @@
                 <Grid Margin="20">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="Affecter l'avance" FontSize="21" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding DetailParty}" Margin="0,3,0,0" Foreground="{StaticResource TextSecondaryBrush}" />
                         </StackPanel>
-                        <Button Grid.Column="1" Width="90" Height="32" Content="Annuler" Command="{Binding CancelAdvanceCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                     </Grid>
                     <TextBlock Grid.Row="1" Text="{Binding WorkflowErrorMessage}" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" Margin="0,8,0,0" Visibility="{Binding HasWorkflowError, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     <Grid Grid.Row="2" Margin="0,10,0,8">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="105" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,8,0">
                             <Label Content="Rechercher une obligation" Target="{Binding ElementName=AdvanceObligationSearchInput}" Style="{StaticResource FieldLabelStyle}" />
-                            <TextBox x:Name="AdvanceObligationSearchInput" Height="34" Text="{Binding ObligationSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBoxStyle}" />
+                            <TextBox x:Name="AdvanceObligationSearchInput" Height="34" Text="{Binding ObligationSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource InputTextBoxStyle}">
+                                <TextBox.InputBindings>
+                                    <KeyBinding Key="Enter" Command="{Binding SearchObligationsCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
                         </StackPanel>
                         <Button Grid.Column="1" Height="34" Margin="0,24,12,0" Content="Actualiser" Command="{Binding SearchObligationsCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                         <StackPanel Grid.Column="2" MinWidth="140">

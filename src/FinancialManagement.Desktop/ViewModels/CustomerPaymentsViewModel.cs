@@ -11,12 +11,14 @@ namespace FinancialManagement.Desktop.ViewModels;
 public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
 {
     private readonly ICustomerPaymentService _paymentService;
+    private readonly ICustomerPaymentObligationReadService _obligationReadService;
     private readonly ICustomerPaymentObligationLookupService _obligationLookupService;
     private readonly ICustomerAdvanceService _advanceService;
     private readonly IClientLookupService _clientLookupService;
 
     public CustomerPaymentsViewModel(
         ICustomerPaymentService paymentService,
+        ICustomerPaymentObligationReadService obligationReadService,
         ICustomerPaymentObligationLookupService obligationLookupService,
         ICustomerAdvanceService advanceService,
         IClientLookupService clientLookupService,
@@ -30,17 +32,19 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
             PermissionModule.CustomerPayments,
             PermissionModule.Clients,
             "Encaissements clients",
-            "Consultez les règlements clients, leurs affectations et les avances disponibles.",
+            "Suivez chaque créance, son règlement et l'historique de ses encaissements.",
             "client",
             "Client",
             "encaissements")
     {
         ArgumentNullException.ThrowIfNull(paymentService);
+        ArgumentNullException.ThrowIfNull(obligationReadService);
         ArgumentNullException.ThrowIfNull(obligationLookupService);
         ArgumentNullException.ThrowIfNull(advanceService);
         ArgumentNullException.ThrowIfNull(clientLookupService);
 
         _paymentService = paymentService;
+        _obligationReadService = obligationReadService;
         _obligationLookupService = obligationLookupService;
         _advanceService = advanceService;
         _clientLookupService = clientLookupService;
@@ -52,17 +56,17 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
         PaymentListQueryData query,
         CancellationToken cancellationToken)
     {
-        var applicationQuery = new CustomerPaymentListQuery(
+        var applicationQuery = new CustomerPaymentObligationPageQuery(
             query.PageNumber,
             query.PageSize,
             query.FromDate,
             query.ToDate,
             query.SearchText,
-            query.PaymentMethod);
-        var result = await _paymentService.GetPageAsync(applicationQuery, cancellationToken);
+            query.Status);
+        var result = await _obligationReadService.GetPageAsync(applicationQuery, cancellationToken);
         if (!result.Success)
         {
-            var failure = MapListFailure(result.FailureReason);
+            var failure = MapObligationReadFailure(result.FailureReason);
             return new PaymentPageData(
                 false,
                 failure.Kind,
@@ -78,21 +82,61 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
             true,
             PaymentFailureKind.None,
             null,
-            result.Items.Select(item => new PaymentListData(
-                item.Id,
+            result.Items.Select(item => new PaymentObligationListData(
+                MapTarget(item.TargetType),
+                item.TargetId,
                 item.Reference,
-                item.PaymentDate,
+                item.BusinessDate,
                 item.ClientId,
                 item.ClientName,
-                item.AmountMinor,
-                item.PaymentMethod,
-                item.AllocatedAmountMinor,
-                item.UnallocatedAmountMinor,
-                item.Observation)).ToArray(),
+                item.OriginalAmountMinor,
+                item.PaidAmountMinor,
+                item.RemainingAmountMinor,
+                item.Status)).ToArray(),
             result.PageNumber,
             result.PageSize,
             result.TotalCount,
             result.TotalPages);
+    }
+
+    internal override async Task<PaymentObligationDetailResponse> GetObligationDetailAsync(
+        PaymentTargetKind targetKind,
+        long targetId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _obligationReadService.GetDetailAsync(
+            MapReadTarget(targetKind), targetId, cancellationToken);
+        if (!result.Success || result.Item is null)
+        {
+            var failure = MapObligationReadFailure(result.FailureReason);
+            return new PaymentObligationDetailResponse(false, failure.Kind, failure.Message, null);
+        }
+
+        var item = result.Item;
+        return new PaymentObligationDetailResponse(
+            true,
+            PaymentFailureKind.None,
+            null,
+            new PaymentObligationDetailData(
+                MapTarget(item.TargetType),
+                item.TargetId,
+                item.Reference,
+                item.BusinessDate,
+                item.ClientId,
+                item.ClientName,
+                item.OriginalAmountMinor,
+                item.PaidAmountMinor,
+                item.RemainingAmountMinor,
+                item.Status,
+                item.History.Select(history => new PaymentHistoryData(
+                    history.PaymentId,
+                    history.PaymentReference,
+                    history.PaymentDate,
+                    history.PaymentCreatedAtUtc,
+                    history.PaymentMethod,
+                    history.AllocatedAmountMinor,
+                    history.CumulativePaidAmountMinor,
+                    history.RemainingAfterPaymentMinor)).ToArray()));
     }
 
     internal override async Task<PaymentDetailResponse> GetDetailAsync(
@@ -286,6 +330,33 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
             PaymentTargetKind.InitialCustomerReceivable,
         _ => throw new InvalidOperationException("Unsupported customer obligation target.")
     };
+
+    private static CustomerPaymentObligationTargetType MapReadTarget(PaymentTargetKind targetKind) =>
+        targetKind switch
+        {
+            PaymentTargetKind.Sale => CustomerPaymentObligationTargetType.Sale,
+            PaymentTargetKind.InitialCustomerReceivable =>
+                CustomerPaymentObligationTargetType.InitialCustomerReceivable,
+            _ => throw new InvalidOperationException("Unsupported customer obligation target.")
+        };
+
+    private static Failure MapObligationReadFailure(CustomerPaymentObligationReadFailureReason reason) =>
+        reason switch
+        {
+            CustomerPaymentObligationReadFailureReason.NotAuthenticated =>
+                new(PaymentFailureKind.NotAuthenticated, "Votre session n'est plus active."),
+            CustomerPaymentObligationReadFailureReason.Forbidden =>
+                new(PaymentFailureKind.Forbidden, "Vous n'êtes pas autorisé à consulter les encaissements clients."),
+            CustomerPaymentObligationReadFailureReason.InvalidPageNumber
+                or CustomerPaymentObligationReadFailureReason.InvalidPageSize
+                or CustomerPaymentObligationReadFailureReason.InvalidDateRange
+                or CustomerPaymentObligationReadFailureReason.InvalidStatus
+                or CustomerPaymentObligationReadFailureReason.InvalidTarget =>
+                new(PaymentFailureKind.Validation, "Les filtres ou l'obligation demandée ne sont pas valides."),
+            CustomerPaymentObligationReadFailureReason.NotFound =>
+                new(PaymentFailureKind.NotFound, "Cette obligation n'existe plus."),
+            _ => new(PaymentFailureKind.DataIntegrity, "Les données d'affectation sont incohérentes.")
+        };
 
     private static Failure MapListFailure(CustomerPaymentListFailureReason reason) => reason switch
     {

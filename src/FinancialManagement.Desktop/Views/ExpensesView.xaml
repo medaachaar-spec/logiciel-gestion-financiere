@@ -80,7 +80,11 @@
                                  TabIndex="0"
                                  Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource InputTextBoxStyle}"
-                                 AutomationProperties.Name="Rechercher par référence, catégorie ou employé" />
+                                 AutomationProperties.Name="Rechercher par référence, catégorie ou employé">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyFiltersCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="0,0,12,0">
                         <Label Content="Date début"
@@ -222,7 +226,8 @@
 
         <Grid Background="#66000000"
               Visibility="{Binding IsCreateFormVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Background="{StaticResource SurfaceBrush}"
+            <Border x:Name="ExpenseCreateDialog"
+                    Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
@@ -236,21 +241,12 @@
                               Padding="22">
                     <StackPanel>
                         <Grid Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="Nouvelle dépense" FontSize="22" FontWeight="SemiBold" />
                                 <TextBlock Text="La date et la référence seront générées automatiquement."
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,4,0,0" />
                             </StackPanel>
-                            <Button Grid.Column="1" Width="90" Height="34"
-                                    Content="Annuler"
-                                    Command="{Binding CancelCreateFormCommand}"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    AutomationProperties.Name="Annuler la nouvelle dépense" />
                         </Grid>
 
                         <TextBlock Text="{Binding FormErrorMessage}"
@@ -349,7 +345,11 @@
                                         <TextBox x:Name="EmployeeSearchInput" Height="36" TabIndex="13"
                                                  Text="{Binding EmployeeSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                  Style="{StaticResource InputTextBoxStyle}"
-                                                 AutomationProperties.Name="Rechercher un employé par nom ou identifiant" />
+                                                 AutomationProperties.Name="Rechercher un employé par nom ou identifiant">
+                                            <TextBox.InputBindings>
+                                                <KeyBinding Key="Enter" Command="{Binding SearchEmployeesCommand}" />
+                                            </TextBox.InputBindings>
+                                        </TextBox>
                                     </StackPanel>
                                     <Button Grid.Column="1" Height="36" Margin="0,25,0,0" TabIndex="14"
                                             Content="Rechercher"

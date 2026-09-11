@@ -81,7 +81,11 @@
                                  TabIndex="0"
                                  Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource InputTextBoxStyle}"
-                                 AutomationProperties.Name="Rechercher par référence ou client" />
+                                 AutomationProperties.Name="Rechercher par référence ou client">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyFiltersCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Margin="0,0,12,0">
                         <Label Content="Date début"
@@ -229,7 +233,8 @@
 
         <Grid Background="#66000000"
               Visibility="{Binding IsCreateFormVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
-            <Border Background="{StaticResource SurfaceBrush}"
+            <Border x:Name="SaleCreateDialog"
+                    Background="{StaticResource SurfaceBrush}"
                     BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1"
                     CornerRadius="12"
@@ -243,23 +248,12 @@
                               Padding="22">
                     <StackPanel>
                         <Grid Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <TextBlock Text="Nouvelle vente" FontSize="22" FontWeight="SemiBold" />
                                 <TextBlock Text="Les champs marqués d'un astérisque sont obligatoires."
                                            Foreground="{StaticResource TextSecondaryBrush}"
                                            Margin="0,4,0,0" />
                             </StackPanel>
-                            <Button Grid.Column="1"
-                                    Width="90"
-                                    Height="34"
-                                    Content="Annuler"
-                                    Command="{Binding CancelCreateFormCommand}"
-                                    Style="{StaticResource SecondaryButtonStyle}"
-                                    AutomationProperties.Name="Annuler la nouvelle vente" />
                         </Grid>
 
                         <TextBlock Text="{Binding FormErrorMessage}"
@@ -356,7 +350,11 @@
                                                      TabIndex="13"
                                                      Text="{Binding ClientSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                      Style="{StaticResource InputTextBoxStyle}"
-                                                     AutomationProperties.Name="Rechercher un client par nom ou identifiant" />
+                                                     AutomationProperties.Name="Rechercher un client par nom ou identifiant">
+                                                <TextBox.InputBindings>
+                                                    <KeyBinding Key="Enter" Command="{Binding SearchClientsCommand}" />
+                                                </TextBox.InputBindings>
+                                            </TextBox>
                                         </StackPanel>
                                         <Button Grid.Column="1"
                                                 Height="36"

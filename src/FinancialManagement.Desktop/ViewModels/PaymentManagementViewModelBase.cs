@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
+using FinancialManagement.Application.Payments;
 using FinancialManagement.Desktop.Formatting;
 using FinancialManagement.Desktop.Services;
 using FinancialManagement.Domain.Enums;
@@ -35,6 +36,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private readonly AsyncRelayCommand _previousPageRelayCommand;
     private readonly AsyncRelayCommand _nextPageRelayCommand;
     private readonly AsyncRelayCommand _openDetailRelayCommand;
+    private readonly RelayCommand _showCreateForObligationRelayCommand;
     private readonly RelayCommand _closeDetailRelayCommand;
     private readonly RelayCommand _showCreateRelayCommand;
     private readonly RelayCommand _cancelCreateRelayCommand;
@@ -51,11 +53,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private string _searchText = string.Empty;
     private DateTime? _fromDate;
     private DateTime? _toDate;
-    private PaymentMethodFilterOptionViewModel? _selectedFilterPaymentMethod;
+    private PaymentStatusFilterOptionViewModel? _selectedFilterStatus;
     private string? _appliedSearchText;
     private DateOnly? _appliedFromDate;
     private DateOnly? _appliedToDate;
-    private PaymentMethod? _appliedPaymentMethod;
+    private PaymentObligationStatus? _appliedStatus;
     private int _pageNumber = 1;
     private int _totalPages;
     private int _totalCount;
@@ -85,6 +87,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private string _observation = string.Empty;
     private PaymentMethodOptionViewModel? _selectedPaymentMethod;
     private PaymentDetailData? _selectedDetail;
+    private PaymentObligationDetailData? _selectedObligationDetail;
     private string _detailReference = string.Empty;
     private string _detailDate = string.Empty;
     private string _detailParty = string.Empty;
@@ -93,6 +96,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private string _detailUnallocatedAmount = string.Empty;
     private string _detailPaymentMethod = string.Empty;
     private string _detailObservation = string.Empty;
+    private string _detailTargetType = string.Empty;
+    private string _detailPaidAmount = string.Empty;
+    private string _detailRemainingAmount = string.Empty;
+    private string _detailStatus = string.Empty;
+    private bool _isTargetObligationLocked;
     private string _allocatedSummary = MoneyFormatter.FormatMinor(0);
     private string _remainingSummary = MoneyFormatter.FormatMinor(0);
     private string _confirmationParty = string.Empty;
@@ -147,14 +155,15 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             new PaymentMethodOptionViewModel(PaymentMethod.Cash, "Espèces"),
             new PaymentMethodOptionViewModel(PaymentMethod.BankTransfer, "Virement bancaire")
         ];
-        FilterPaymentMethods =
+        FilterStatuses =
         [
-            new PaymentMethodFilterOptionViewModel(null, "Tous les modes"),
-            new PaymentMethodFilterOptionViewModel(PaymentMethod.Cash, "Espèces"),
-            new PaymentMethodFilterOptionViewModel(PaymentMethod.BankTransfer, "Virement bancaire")
+            new PaymentStatusFilterOptionViewModel(null, "Toutes"),
+            new PaymentStatusFilterOptionViewModel(PaymentObligationStatus.Outstanding, "À régler"),
+            new PaymentStatusFilterOptionViewModel(PaymentObligationStatus.PartiallyPaid, "Partiellement réglées"),
+            new PaymentStatusFilterOptionViewModel(PaymentObligationStatus.Settled, "Réglées")
         ];
         _selectedPaymentMethod = PaymentMethods[0];
-        _selectedFilterPaymentMethod = FilterPaymentMethods[0];
+        _selectedFilterStatus = FilterStatuses[0];
 
         _refreshRelayCommand = new AsyncRelayCommand(_ => RefreshAsync(), _ => CanLoadPage);
         _applyFiltersRelayCommand = new AsyncRelayCommand(_ => ApplyFiltersAsync(), _ => CanLoadPage);
@@ -166,8 +175,14 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             _ => GoToNextPageAsync(),
             _ => CanLoadPage && TotalPages > 0 && PageNumber < TotalPages);
         _openDetailRelayCommand = new AsyncRelayCommand(
-            parameter => Track(OpenDetailAsync((parameter as PaymentListItemViewModel)?.Id)),
+            parameter => Track(OpenDetailAsync(parameter as PaymentListItemViewModel)),
             parameter => CanLoadPage && parameter is PaymentListItemViewModel);
+        _showCreateForObligationRelayCommand = new RelayCommand(
+            parameter => ShowCreateForObligation(parameter as PaymentListItemViewModel),
+            parameter => CanCreatePayment
+                && !IsBusy
+                && !HasOpenWorkflow
+                && parameter is PaymentListItemViewModel { HasRemaining: true });
         _closeDetailRelayCommand = new RelayCommand(
             _ => CloseDetail(),
             _ => IsDetailVisible && !IsBusy);
@@ -185,7 +200,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             _ => IsCreateVisible && SelectedPartyResult is not null && !IsBusy);
         _clearSelectedPartyRelayCommand = new RelayCommand(
             _ => ClearSelectedParty(),
-            _ => IsCreateVisible && SelectedParty is not null && !IsBusy);
+            _ => IsCreateVisible && SelectedParty is not null && CanChangeCreateTarget && !IsBusy);
         _searchObligationsRelayCommand = new AsyncRelayCommand(
             _ => SearchObligationsAsync(),
             _ => CanSearchObligations && !IsBusy);
@@ -214,6 +229,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         PreviousPageCommand = _previousPageRelayCommand;
         NextPageCommand = _nextPageRelayCommand;
         OpenDetailCommand = _openDetailRelayCommand;
+        ShowCreateForObligationCommand = _showCreateForObligationRelayCommand;
         CloseDetailCommand = _closeDetailRelayCommand;
         ShowCreateCommand = _showCreateRelayCommand;
         CancelCreateCommand = _cancelCreateRelayCommand;
@@ -237,9 +253,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     public ObservableCollection<PaymentAllocationDetailItemViewModel> DetailAllocations { get; } = [];
 
+    public ObservableCollection<PaymentHistoryItemViewModel> DetailHistory { get; } = [];
+
     public IReadOnlyList<PaymentMethodOptionViewModel> PaymentMethods { get; }
 
-    public IReadOnlyList<PaymentMethodFilterOptionViewModel> FilterPaymentMethods { get; }
+    public IReadOnlyList<PaymentStatusFilterOptionViewModel> FilterStatuses { get; }
 
     public ICommand RefreshCommand { get; }
     public ICommand ApplyFiltersCommand { get; }
@@ -247,6 +265,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     public ICommand PreviousPageCommand { get; }
     public ICommand NextPageCommand { get; }
     public ICommand OpenDetailCommand { get; }
+    public ICommand ShowCreateForObligationCommand { get; }
     public ICommand CloseDetailCommand { get; }
     public ICommand ShowCreateCommand { get; }
     public ICommand CancelCreateCommand { get; }
@@ -267,7 +286,27 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     public string PartyColumnHeader => _partyKindCapitalized;
 
+    public string DetailPartyLabel => _partyKindCapitalized;
+
     public string NewPaymentLabel => $"Nouveau {SingularPaymentLower}";
+
+    public string CreateInstruction => IsTargetObligationLocked
+        ? "Le tiers et l'obligation sont présélectionnés. Ajustez uniquement le montant si nécessaire."
+        : "Choisissez le tiers et affectez explicitement le paiement aux obligations.";
+
+    public string PaymentActionLabel => _partyKindLower == "client" ? "Encaisser" : "Payer";
+
+    public string ObligationReferenceHeader => _partyKindLower == "client"
+        ? "Référence vente"
+        : "Référence achat";
+
+    public string DetailTitle => _partyKindLower == "client"
+        ? "Détail de la créance"
+        : "Détail de la dette";
+
+    public string DetailHistoryTitle => _partyKindLower == "client"
+        ? "HISTORIQUE DES ENCAISSEMENTS"
+        : "HISTORIQUE DES PAIEMENTS";
 
     protected abstract string SingularPaymentLower { get; }
 
@@ -301,10 +340,10 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         }
     }
 
-    public PaymentMethodFilterOptionViewModel? SelectedFilterPaymentMethod
+    public PaymentStatusFilterOptionViewModel? SelectedFilterStatus
     {
-        get => _selectedFilterPaymentMethod;
-        set => SetProperty(ref _selectedFilterPaymentMethod, value);
+        get => _selectedFilterStatus;
+        set => SetProperty(ref _selectedFilterStatus, value);
     }
 
     public int PageNumber
@@ -344,14 +383,14 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     }
 
     public string PageNumberDescription => TotalPages == 0
-        ? "Page 0 / 0"
+        ? "Page 1 / 1"
         : $"Page {PageNumber} / {TotalPages}";
 
     public string TotalCountDescription => TotalCount switch
     {
-        0 => $"Aucun {SingularPaymentLower}",
-        1 => $"1 {SingularPaymentLower}",
-        _ => $"{TotalCount} {_paymentPluralLower}"
+        0 => "Aucune obligation",
+        1 => "1 obligation",
+        _ => $"{TotalCount} obligations"
     };
 
     public bool IsLoading
@@ -402,8 +441,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     public bool ShowEmptyState => HasLoadedList && !HasPayments && !IsLoading;
 
     public string EmptyStateMessage => HasActiveFilters
-        ? $"Aucun {_paymentPluralLower} ne correspond aux filtres."
-        : $"Aucun {_paymentPluralLower} trouvé.";
+        ? "Aucune obligation ne correspond aux filtres."
+        : "Aucune obligation trouvée.";
 
     public bool HasLoadedList
     {
@@ -419,7 +458,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     public bool HasActiveFilters => _appliedFromDate.HasValue
         || _appliedToDate.HasValue
-        || _appliedPaymentMethod.HasValue
+        || _appliedStatus.HasValue
         || !string.IsNullOrWhiteSpace(_appliedSearchText);
 
     public bool CanViewPayments
@@ -712,6 +751,47 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         private set => SetProperty(ref _detailObservation, value);
     }
 
+    public string DetailTargetType
+    {
+        get => _detailTargetType;
+        private set => SetProperty(ref _detailTargetType, value);
+    }
+
+    public string DetailPaidAmount
+    {
+        get => _detailPaidAmount;
+        private set => SetProperty(ref _detailPaidAmount, value);
+    }
+
+    public string DetailRemainingAmount
+    {
+        get => _detailRemainingAmount;
+        private set => SetProperty(ref _detailRemainingAmount, value);
+    }
+
+    public string DetailStatus
+    {
+        get => _detailStatus;
+        private set => SetProperty(ref _detailStatus, value);
+    }
+
+    public bool HasDetailHistory => DetailHistory.Count > 0;
+
+    public bool IsTargetObligationLocked
+    {
+        get => _isTargetObligationLocked;
+        private set
+        {
+            if (SetProperty(ref _isTargetObligationLocked, value))
+            {
+                OnPropertyChanged(nameof(CanChangeCreateTarget));
+                OnPropertyChanged(nameof(CreateInstruction));
+            }
+        }
+    }
+
+    public bool CanChangeCreateTarget => !IsTargetObligationLocked;
+
     public bool HasDetailAllocations => DetailAllocations.Count > 0;
 
     public bool CanApplySelectedAdvance => CanApplyAdvancePermission
@@ -831,7 +911,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         _appliedSearchText = NormalizeOptionalText(SearchText);
         _appliedFromDate = FromDate is DateTime from ? DateOnly.FromDateTime(from.Date) : null;
         _appliedToDate = ToDate is DateTime to ? DateOnly.FromDateTime(to.Date) : null;
-        _appliedPaymentMethod = SelectedFilterPaymentMethod?.Value;
+        _appliedStatus = SelectedFilterStatus?.Value;
         NotifyFilterStateChanged();
         return StartListLoad(1, cancellationToken);
     }
@@ -863,7 +943,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         return operation;
     }
 
-    private bool CanSearchObligations => (IsCreateVisible && SelectedParty is not null)
+    private bool CanSearchObligations => (IsCreateVisible
+            && SelectedParty is not null
+            && CanChangeCreateTarget)
         || (IsAdvanceVisible && _selectedDetail?.PartyId is not null);
 
     private async Task InitializeCoreAsync(CancellationToken cancellationToken)
@@ -1008,9 +1090,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         }
     }
 
-    private async Task OpenDetailAsync(long? paymentId, CancellationToken cancellationToken = default)
+    private async Task OpenDetailAsync(
+        PaymentListItemViewModel? obligation,
+        CancellationToken cancellationToken = default)
     {
-        if (paymentId is not > 0 || !CanLoadPage)
+        if (obligation is null || obligation.TargetId <= 0 || !CanLoadPage)
         {
             return;
         }
@@ -1030,7 +1114,10 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             }
 
             var result = await _operationCoordinator.RunAsync(
-                operationToken => GetDetailAsync(paymentId.Value, operationToken),
+                operationToken => GetObligationDetailAsync(
+                    obligation.TargetKind,
+                    obligation.TargetId,
+                    operationToken),
                 token);
             if (!CanApplyResult(identity, version, token))
             {
@@ -1044,7 +1131,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
                 return;
             }
 
-            ApplyDetail(result.Item);
+            ApplyObligationDetail(result.Item);
             IsDetailVisible = true;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -1056,7 +1143,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             Trace.TraceError("{0} detail loading failed: {1}", PageTitle, exception);
             if (IsCurrentView && version == Volatile.Read(ref _requestVersion))
             {
-                WorkflowErrorMessage = "Impossible de charger le détail du paiement.";
+                WorkflowErrorMessage = "Impossible de charger le détail de l'obligation.";
             }
         }
         finally
@@ -1311,6 +1398,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         var partyId = SelectedParty.Id;
         var paymentMethod = SelectedPaymentMethod.Value;
         var observation = NormalizeOptionalText(Observation);
+        var detailTarget = _preparedAllocations.Count == 1
+            ? _preparedAllocations[0]
+            : null;
 
         try
         {
@@ -1364,16 +1454,19 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
                 ListErrorMessage = "Le paiement est enregistré, mais la liste n'a pas pu être actualisée.";
             }
 
-            if (result.PaymentId is long paymentId)
+            if (detailTarget is not null)
             {
                 var detailResult = await _operationCoordinator.RunAsync(
-                    operationToken => GetDetailAsync(paymentId, operationToken),
+                    operationToken => GetObligationDetailAsync(
+                        detailTarget.TargetKind,
+                        detailTarget.TargetId,
+                        operationToken),
                     token);
                 if (CanApplyResult(identity, version, token)
                     && detailResult.Success
                     && detailResult.Item is not null)
                 {
-                    ApplyDetail(detailResult.Item);
+                    ApplyObligationDetail(detailResult.Item);
                     IsDetailVisible = true;
                 }
             }
@@ -1601,6 +1694,29 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         RaiseCommandCanExecuteChanged();
     }
 
+    private void ApplyObligationDetail(PaymentObligationDetailData item)
+    {
+        _selectedObligationDetail = item;
+        _selectedDetail = null;
+        DetailTargetType = PaymentLabels.FormatTargetType(item.TargetKind);
+        DetailReference = item.Reference;
+        DetailDate = item.BusinessDate.ToString("dd/MM/yyyy");
+        DetailParty = string.IsNullOrWhiteSpace(item.PartyName) ? "Client anonyme" : item.PartyName;
+        DetailAmount = MoneyFormatter.FormatMinor(item.OriginalAmountMinor);
+        DetailPaidAmount = MoneyFormatter.FormatMinor(item.PaidAmountMinor);
+        DetailRemainingAmount = MoneyFormatter.FormatMinor(item.RemainingAmountMinor);
+        DetailStatus = PaymentLabels.FormatStatus(item.Status);
+        DetailHistory.Clear();
+        foreach (var historyItem in item.History)
+        {
+            DetailHistory.Add(new PaymentHistoryItemViewModel(historyItem));
+        }
+
+        OnPropertyChanged(nameof(HasDetailHistory));
+        OnPropertyChanged(nameof(CanApplySelectedAdvance));
+        RaiseCommandCanExecuteChanged();
+    }
+
     private void HandleFailure(
         PaymentFailureKind failureKind,
         string? message,
@@ -1635,6 +1751,41 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     {
         ResetCreateForm();
         SuccessMessage = null;
+        IsCreateVisible = true;
+    }
+
+    private void ShowCreateForObligation(PaymentListItemViewModel? obligation)
+    {
+        if (obligation is not { HasRemaining: true, PartyId: > 0 }
+            || !CanCreatePayment
+            || IsBusy
+            || HasOpenWorkflow)
+        {
+            return;
+        }
+
+        ResetCreateForm();
+        IsTargetObligationLocked = true;
+        SuccessMessage = null;
+        SelectedParty = new PaymentPartyLookupItemViewModel(
+            new PartyLookupData(obligation.PartyId.Value, obligation.PartyName, null));
+
+        var target = new PaymentObligationItemViewModel(new PaymentObligationData(
+            obligation.TargetKind,
+            obligation.TargetId,
+            obligation.Reference,
+            obligation.BusinessDateValue,
+            null,
+            obligation.OriginalAmountMinor,
+            obligation.RemainingAmountMinor))
+        {
+            AllocationAmount = MoneyFormatter.FormatMinor(obligation.RemainingAmountMinor)
+        };
+        target.PropertyChanged += ObligationOnPropertyChanged;
+        Obligations.Add(target);
+        PaymentAmount = MoneyFormatter.FormatMinor(obligation.RemainingAmountMinor);
+        NotifyObligationsChanged();
+        UpdateAllocationSummary();
         IsCreateVisible = true;
     }
 
@@ -1674,6 +1825,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     private void ResetCreateForm()
     {
+        IsTargetObligationLocked = false;
         IsCreateConfirmationVisible = false;
         PartySearchText = string.Empty;
         SelectedPartyResult = null;
@@ -1695,11 +1847,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         SearchText = string.Empty;
         FromDate = null;
         ToDate = null;
-        SelectedFilterPaymentMethod = FilterPaymentMethods[0];
+        SelectedFilterStatus = FilterStatuses[0];
         _appliedSearchText = null;
         _appliedFromDate = null;
         _appliedToDate = null;
-        _appliedPaymentMethod = null;
+        _appliedStatus = null;
         NotifyFilterStateChanged();
     }
 
@@ -1742,6 +1894,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private void ClearDetail()
     {
         _selectedDetail = null;
+        _selectedObligationDetail = null;
         DetailReference = string.Empty;
         DetailDate = string.Empty;
         DetailParty = string.Empty;
@@ -1750,8 +1903,14 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         DetailUnallocatedAmount = string.Empty;
         DetailPaymentMethod = string.Empty;
         DetailObservation = string.Empty;
+        DetailTargetType = string.Empty;
+        DetailPaidAmount = string.Empty;
+        DetailRemainingAmount = string.Empty;
+        DetailStatus = string.Empty;
         DetailAllocations.Clear();
+        DetailHistory.Clear();
         OnPropertyChanged(nameof(HasDetailAllocations));
+        OnPropertyChanged(nameof(HasDetailHistory));
         OnPropertyChanged(nameof(CanApplySelectedAdvance));
         RaiseCommandCanExecuteChanged();
     }
@@ -1834,7 +1993,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         _appliedFromDate,
         _appliedToDate,
         _appliedSearchText,
-        _appliedPaymentMethod);
+        _appliedStatus);
 
     private CancellationTokenSource CreateOperationCancellation(CancellationToken cancellationToken)
     {
@@ -1941,6 +2100,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         _previousPageRelayCommand?.RaiseCanExecuteChanged();
         _nextPageRelayCommand?.RaiseCanExecuteChanged();
         _openDetailRelayCommand?.RaiseCanExecuteChanged();
+        _showCreateForObligationRelayCommand?.RaiseCanExecuteChanged();
         _closeDetailRelayCommand?.RaiseCanExecuteChanged();
         _showCreateRelayCommand?.RaiseCanExecuteChanged();
         _cancelCreateRelayCommand?.RaiseCanExecuteChanged();
@@ -1965,6 +2125,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     internal abstract Task<PaymentDetailResponse> GetDetailAsync(
         long paymentId,
+        CancellationToken cancellationToken);
+
+    internal abstract Task<PaymentObligationDetailResponse> GetObligationDetailAsync(
+        PaymentTargetKind targetKind,
+        long targetId,
         CancellationToken cancellationToken);
 
     internal abstract Task<PartyLookupResponse> SearchPartiesAsync(
@@ -2009,4 +2174,4 @@ internal sealed record PaymentListQueryData(
     DateOnly? FromDate,
     DateOnly? ToDate,
     string? SearchText,
-    PaymentMethod? PaymentMethod);
+    PaymentObligationStatus? Status);

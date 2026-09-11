@@ -11,12 +11,14 @@ namespace FinancialManagement.Desktop.ViewModels;
 public sealed class SupplierPaymentsViewModel : PaymentManagementViewModelBase
 {
     private readonly ISupplierPaymentService _paymentService;
+    private readonly ISupplierPaymentObligationReadService _obligationReadService;
     private readonly ISupplierPaymentObligationLookupService _obligationLookupService;
     private readonly ISupplierAdvanceService _advanceService;
     private readonly ISupplierLookupService _supplierLookupService;
 
     public SupplierPaymentsViewModel(
         ISupplierPaymentService paymentService,
+        ISupplierPaymentObligationReadService obligationReadService,
         ISupplierPaymentObligationLookupService obligationLookupService,
         ISupplierAdvanceService advanceService,
         ISupplierLookupService supplierLookupService,
@@ -30,17 +32,19 @@ public sealed class SupplierPaymentsViewModel : PaymentManagementViewModelBase
             PermissionModule.SupplierPayments,
             PermissionModule.Suppliers,
             "Paiements fournisseurs",
-            "Consultez les règlements fournisseurs, leurs affectations et les avances disponibles.",
+            "Suivez chaque dette, son règlement et l'historique de ses paiements.",
             "fournisseur",
             "Fournisseur",
             "paiements")
     {
         ArgumentNullException.ThrowIfNull(paymentService);
+        ArgumentNullException.ThrowIfNull(obligationReadService);
         ArgumentNullException.ThrowIfNull(obligationLookupService);
         ArgumentNullException.ThrowIfNull(advanceService);
         ArgumentNullException.ThrowIfNull(supplierLookupService);
 
         _paymentService = paymentService;
+        _obligationReadService = obligationReadService;
         _obligationLookupService = obligationLookupService;
         _advanceService = advanceService;
         _supplierLookupService = supplierLookupService;
@@ -52,17 +56,17 @@ public sealed class SupplierPaymentsViewModel : PaymentManagementViewModelBase
         PaymentListQueryData query,
         CancellationToken cancellationToken)
     {
-        var applicationQuery = new SupplierPaymentListQuery(
+        var applicationQuery = new SupplierPaymentObligationPageQuery(
             query.PageNumber,
             query.PageSize,
             query.FromDate,
             query.ToDate,
             query.SearchText,
-            query.PaymentMethod);
-        var result = await _paymentService.GetPageAsync(applicationQuery, cancellationToken);
+            query.Status);
+        var result = await _obligationReadService.GetPageAsync(applicationQuery, cancellationToken);
         if (!result.Success)
         {
-            var failure = MapListFailure(result.FailureReason);
+            var failure = MapObligationReadFailure(result.FailureReason);
             return new PaymentPageData(
                 false,
                 failure.Kind,
@@ -78,21 +82,61 @@ public sealed class SupplierPaymentsViewModel : PaymentManagementViewModelBase
             true,
             PaymentFailureKind.None,
             null,
-            result.Items.Select(item => new PaymentListData(
-                item.Id,
+            result.Items.Select(item => new PaymentObligationListData(
+                MapTarget(item.TargetType),
+                item.TargetId,
                 item.Reference,
-                item.PaymentDate,
+                item.BusinessDate,
                 item.SupplierId,
                 item.SupplierName,
-                item.AmountMinor,
-                item.PaymentMethod,
-                item.AllocatedAmountMinor,
-                item.UnallocatedAmountMinor,
-                item.Observation)).ToArray(),
+                item.OriginalAmountMinor,
+                item.PaidAmountMinor,
+                item.RemainingAmountMinor,
+                item.Status)).ToArray(),
             result.PageNumber,
             result.PageSize,
             result.TotalCount,
             result.TotalPages);
+    }
+
+    internal override async Task<PaymentObligationDetailResponse> GetObligationDetailAsync(
+        PaymentTargetKind targetKind,
+        long targetId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _obligationReadService.GetDetailAsync(
+            MapReadTarget(targetKind), targetId, cancellationToken);
+        if (!result.Success || result.Item is null)
+        {
+            var failure = MapObligationReadFailure(result.FailureReason);
+            return new PaymentObligationDetailResponse(false, failure.Kind, failure.Message, null);
+        }
+
+        var item = result.Item;
+        return new PaymentObligationDetailResponse(
+            true,
+            PaymentFailureKind.None,
+            null,
+            new PaymentObligationDetailData(
+                MapTarget(item.TargetType),
+                item.TargetId,
+                item.Reference,
+                item.BusinessDate,
+                item.SupplierId,
+                item.SupplierName,
+                item.OriginalAmountMinor,
+                item.PaidAmountMinor,
+                item.RemainingAmountMinor,
+                item.Status,
+                item.History.Select(history => new PaymentHistoryData(
+                    history.PaymentId,
+                    history.PaymentReference,
+                    history.PaymentDate,
+                    history.PaymentCreatedAtUtc,
+                    history.PaymentMethod,
+                    history.AllocatedAmountMinor,
+                    history.CumulativePaidAmountMinor,
+                    history.RemainingAfterPaymentMinor)).ToArray()));
     }
 
     internal override async Task<PaymentDetailResponse> GetDetailAsync(
@@ -286,6 +330,33 @@ public sealed class SupplierPaymentsViewModel : PaymentManagementViewModelBase
             PaymentTargetKind.InitialSupplierPayable,
         _ => throw new InvalidOperationException("Unsupported supplier obligation target.")
     };
+
+    private static SupplierPaymentObligationTargetType MapReadTarget(PaymentTargetKind targetKind) =>
+        targetKind switch
+        {
+            PaymentTargetKind.Purchase => SupplierPaymentObligationTargetType.Purchase,
+            PaymentTargetKind.InitialSupplierPayable =>
+                SupplierPaymentObligationTargetType.InitialSupplierPayable,
+            _ => throw new InvalidOperationException("Unsupported supplier obligation target.")
+        };
+
+    private static Failure MapObligationReadFailure(SupplierPaymentObligationReadFailureReason reason) =>
+        reason switch
+        {
+            SupplierPaymentObligationReadFailureReason.NotAuthenticated =>
+                new(PaymentFailureKind.NotAuthenticated, "Votre session n'est plus active."),
+            SupplierPaymentObligationReadFailureReason.Forbidden =>
+                new(PaymentFailureKind.Forbidden, "Vous n'êtes pas autorisé à consulter les paiements fournisseurs."),
+            SupplierPaymentObligationReadFailureReason.InvalidPageNumber
+                or SupplierPaymentObligationReadFailureReason.InvalidPageSize
+                or SupplierPaymentObligationReadFailureReason.InvalidDateRange
+                or SupplierPaymentObligationReadFailureReason.InvalidStatus
+                or SupplierPaymentObligationReadFailureReason.InvalidTarget =>
+                new(PaymentFailureKind.Validation, "Les filtres ou l'obligation demandée ne sont pas valides."),
+            SupplierPaymentObligationReadFailureReason.NotFound =>
+                new(PaymentFailureKind.NotFound, "Cette obligation n'existe plus."),
+            _ => new(PaymentFailureKind.DataIntegrity, "Les données d'affectation sont incohérentes.")
+        };
 
     private static Failure MapListFailure(SupplierPaymentListFailureReason reason) => reason switch
     {

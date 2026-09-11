@@ -1,37 +1,79 @@
 using FinancialManagement.Desktop.Formatting;
+using FinancialManagement.Application.Payments;
 using FinancialManagement.Domain.Enums;
 
 namespace FinancialManagement.Desktop.ViewModels;
 
 public sealed class PaymentListItemViewModel
 {
-    internal PaymentListItemViewModel(PaymentListData item)
+    internal PaymentListItemViewModel(PaymentObligationListData item)
     {
-        Id = item.Id;
+        TargetKind = item.TargetKind;
+        TargetId = item.TargetId;
+        PartyId = item.PartyId;
+        TargetType = PaymentLabels.FormatTargetType(item.TargetKind);
         Reference = item.Reference;
-        PaymentDate = item.PaymentDate.ToString("dd/MM/yyyy");
+        BusinessDateValue = item.BusinessDate;
+        BusinessDate = item.BusinessDate.ToString("dd/MM/yyyy");
         PartyName = string.IsNullOrWhiteSpace(item.PartyName) ? "Client anonyme" : item.PartyName;
-        Amount = MoneyFormatter.FormatMinor(item.AmountMinor);
-        AllocatedAmount = MoneyFormatter.FormatMinor(item.AllocatedAmountMinor);
-        UnallocatedAmount = MoneyFormatter.FormatMinor(item.UnallocatedAmountMinor);
-        PaymentMethod = PaymentLabels.FormatPaymentMethod(item.PaymentMethod);
+        OriginalAmount = MoneyFormatter.FormatMinor(item.OriginalAmountMinor);
+        PaidAmount = MoneyFormatter.FormatMinor(item.PaidAmountMinor);
+        RemainingAmount = MoneyFormatter.FormatMinor(item.RemainingAmountMinor);
+        OriginalAmountMinor = item.OriginalAmountMinor;
+        RemainingAmountMinor = item.RemainingAmountMinor;
+        Status = PaymentLabels.FormatStatus(item.Status);
+        HasRemaining = item.RemainingAmountMinor > 0 && item.PartyId is > 0;
     }
 
-    public long Id { get; }
+    internal PaymentTargetKind TargetKind { get; }
+
+    public long TargetId { get; }
+
+    internal long? PartyId { get; }
+
+    public string TargetType { get; }
 
     public string Reference { get; }
 
-    public string PaymentDate { get; }
+    public string BusinessDate { get; }
+
+    internal DateOnly BusinessDateValue { get; }
 
     public string PartyName { get; }
 
-    public string Amount { get; }
+    public string OriginalAmount { get; }
 
-    public string AllocatedAmount { get; }
+    public string PaidAmount { get; }
 
-    public string UnallocatedAmount { get; }
+    public string RemainingAmount { get; }
 
+    internal long OriginalAmountMinor { get; }
+
+    internal long RemainingAmountMinor { get; }
+
+    public string Status { get; }
+
+    public bool HasRemaining { get; }
+}
+
+public sealed class PaymentHistoryItemViewModel
+{
+    internal PaymentHistoryItemViewModel(PaymentHistoryData item)
+    {
+        PaymentReference = item.PaymentReference;
+        PaymentTimestamp = $"{item.PaymentDate:dd/MM/yyyy} {item.PaymentCreatedAtUtc.ToLocalTime():HH:mm}";
+        PaymentMethod = PaymentLabels.FormatPaymentMethod(item.PaymentMethod);
+        AllocatedAmount = MoneyFormatter.FormatMinor(item.AllocatedAmountMinor);
+        CumulativePaidAmount = MoneyFormatter.FormatMinor(item.CumulativePaidAmountMinor);
+        RemainingAfterPayment = MoneyFormatter.FormatMinor(item.RemainingAfterPaymentMinor);
+    }
+
+    public string PaymentReference { get; }
+    public string PaymentTimestamp { get; }
     public string PaymentMethod { get; }
+    public string AllocatedAmount { get; }
+    public string CumulativePaidAmount { get; }
+    public string RemainingAfterPayment { get; }
 }
 
 public sealed class PaymentAllocationDetailItemViewModel
@@ -134,6 +176,10 @@ public sealed record PaymentMethodFilterOptionViewModel(
     PaymentMethod? Value,
     string DisplayName);
 
+public sealed record PaymentStatusFilterOptionViewModel(
+    PaymentObligationStatus? Value,
+    string DisplayName);
+
 internal enum PaymentTargetKind
 {
     Sale,
@@ -154,23 +200,23 @@ internal enum PaymentFailureKind
     Technical
 }
 
-internal sealed record PaymentListData(
-    long Id,
+internal sealed record PaymentObligationListData(
+    PaymentTargetKind TargetKind,
+    long TargetId,
     string Reference,
-    DateOnly PaymentDate,
+    DateOnly BusinessDate,
     long? PartyId,
     string? PartyName,
-    long AmountMinor,
-    PaymentMethod PaymentMethod,
-    long AllocatedAmountMinor,
-    long UnallocatedAmountMinor,
-    string? Observation);
+    long OriginalAmountMinor,
+    long PaidAmountMinor,
+    long RemainingAmountMinor,
+    PaymentObligationStatus Status);
 
 internal sealed record PaymentPageData(
     bool Success,
     PaymentFailureKind FailureKind,
     string? FailureMessage,
-    IReadOnlyList<PaymentListData> Items,
+    IReadOnlyList<PaymentObligationListData> Items,
     int PageNumber,
     int PageSize,
     int TotalCount,
@@ -201,6 +247,35 @@ internal sealed record PaymentDetailResponse(
     PaymentFailureKind FailureKind,
     string? FailureMessage,
     PaymentDetailData? Item);
+
+internal sealed record PaymentHistoryData(
+    long PaymentId,
+    string PaymentReference,
+    DateOnly PaymentDate,
+    DateTimeOffset PaymentCreatedAtUtc,
+    PaymentMethod PaymentMethod,
+    long AllocatedAmountMinor,
+    long CumulativePaidAmountMinor,
+    long RemainingAfterPaymentMinor);
+
+internal sealed record PaymentObligationDetailData(
+    PaymentTargetKind TargetKind,
+    long TargetId,
+    string Reference,
+    DateOnly BusinessDate,
+    long? PartyId,
+    string? PartyName,
+    long OriginalAmountMinor,
+    long PaidAmountMinor,
+    long RemainingAmountMinor,
+    PaymentObligationStatus Status,
+    IReadOnlyList<PaymentHistoryData> History);
+
+internal sealed record PaymentObligationDetailResponse(
+    bool Success,
+    PaymentFailureKind FailureKind,
+    string? FailureMessage,
+    PaymentObligationDetailData? Item);
 
 internal sealed record PartyLookupData(
     long Id,
@@ -261,5 +336,13 @@ internal static class PaymentLabels
         PaymentTargetKind.Purchase => "Achat",
         PaymentTargetKind.InitialSupplierPayable => "Dette fournisseur initiale",
         _ => "Obligation"
+    };
+
+    public static string FormatStatus(PaymentObligationStatus status) => status switch
+    {
+        PaymentObligationStatus.Outstanding => "À régler",
+        PaymentObligationStatus.PartiallyPaid => "Partiellement réglé",
+        PaymentObligationStatus.Settled => "Réglé",
+        _ => "Statut inconnu"
     };
 }
