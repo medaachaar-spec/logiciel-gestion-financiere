@@ -39,22 +39,24 @@ internal sealed class SupplierPaymentObligationReadService(
             return SupplierPaymentObligationPageResult.Failed(
                 query, SupplierPaymentObligationReadFailureReason.InvalidPageNumber);
 
-        var obligations = ApplyStatus(
-            BuildQuery(query.FromDate, query.ToDate, query.SearchText), query.Status);
-        var totalCount = await obligations.CountAsync(cancellationToken);
-        var page = await obligations
-            .OrderByDescending(item => item.BusinessDate)
-            .ThenByDescending(item => item.TargetSort)
-            .ThenByDescending(item => item.TargetId)
-            .Skip((int)skip)
-            .Take(query.PageSize)
-            .ToListAsync(cancellationToken);
+        return await SqliteReadSnapshot.ExecuteAsync(
+            dbContext,
+            token => GetPageSnapshotAsync(query, (int)skip, token),
+            cancellationToken);
+    }
 
-        var purchaseIds = page
+    private async Task<SupplierPaymentObligationPageResult> GetPageSnapshotAsync(
+        SupplierPaymentObligationPageQuery query,
+        int skip,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await BuildQuery(query.FromDate, query.ToDate, query.SearchText)
+            .ToListAsync(cancellationToken);
+        var purchaseIds = candidates
             .Where(item => item.TargetType == SupplierPaymentObligationTargetType.Purchase)
             .Select(item => item.TargetId)
             .ToHashSet();
-        var initialIds = page
+        var initialIds = candidates
             .Where(item => item.TargetType == SupplierPaymentObligationTargetType.InitialSupplierPayable)
             .Select(item => item.TargetId)
             .ToHashSet();
@@ -64,8 +66,8 @@ internal sealed class SupplierPaymentObligationReadService(
             return SupplierPaymentObligationPageResult.Failed(
                 query, SupplierPaymentObligationReadFailureReason.DataIntegrityViolation);
 
-        var items = new List<SupplierPaymentObligationListItem>(page.Count);
-        foreach (var obligation in page)
+        var items = new List<SupplierPaymentObligationListItem>(candidates.Count);
+        foreach (var obligation in candidates)
         {
             var paid = obligation.TargetType == SupplierPaymentObligationTargetType.Purchase
                 ? integrity.Documents.GetValueOrDefault(obligation.TargetId)
@@ -81,14 +83,21 @@ internal sealed class SupplierPaymentObligationReadService(
                 obligation.Reference,
                 obligation.BusinessDate,
                 obligation.PartyId,
-                obligation.PartyName,
+                obligation.PartyName!,
                 obligation.OriginalAmountMinor,
                 paid,
                 remaining,
                 ToStatus(paid, remaining)));
         }
 
-        return SupplierPaymentObligationPageResult.Succeeded(query, items, totalCount);
+        var filtered = ApplyStatus(items, query.Status)
+            .OrderByDescending(item => item.BusinessDate)
+            .ThenByDescending(item => item.TargetType == SupplierPaymentObligationTargetType.Purchase)
+            .ThenByDescending(item => item.TargetId)
+            .ToList();
+        var totalCount = filtered.Count;
+        var page = filtered.Skip(skip).Take(query.PageSize).ToList();
+        return SupplierPaymentObligationPageResult.Succeeded(query, page, totalCount);
     }
 
     public async Task<SupplierPaymentObligationDetailResult> GetDetailAsync(
@@ -104,6 +113,17 @@ internal sealed class SupplierPaymentObligationReadService(
             return SupplierPaymentObligationDetailResult.Failed(
                 SupplierPaymentObligationReadFailureReason.InvalidTarget);
 
+        return await SqliteReadSnapshot.ExecuteAsync(
+            dbContext,
+            token => GetDetailSnapshotAsync(targetType, targetId, token),
+            cancellationToken);
+    }
+
+    private async Task<SupplierPaymentObligationDetailResult> GetDetailSnapshotAsync(
+        SupplierPaymentObligationTargetType targetType,
+        long targetId,
+        CancellationToken cancellationToken)
+    {
         var obligation = await BuildQuery(null, null, null)
             .SingleOrDefaultAsync(
                 item => item.TargetType == targetType && item.TargetId == targetId,
@@ -187,7 +207,7 @@ internal sealed class SupplierPaymentObligationReadService(
                 obligation.Reference,
                 obligation.BusinessDate,
                 obligation.PartyId,
-                obligation.PartyName,
+                obligation.PartyName!,
                 obligation.OriginalAmountMinor,
                 trustedPaid,
                 remaining,
@@ -216,13 +236,15 @@ internal sealed class SupplierPaymentObligationReadService(
         var searchText = string.IsNullOrWhiteSpace(rawSearchText) ? null : rawSearchText.Trim();
         var purchases =
             from purchase in dbContext.Purchases.AsNoTracking()
-            join supplier in dbContext.Suppliers.AsNoTracking() on purchase.SupplierId equals supplier.Id
+            join supplier in dbContext.Suppliers.AsNoTracking()
+                on purchase.SupplierId equals supplier.Id into suppliers
+            from supplier in suppliers.DefaultIfEmpty()
             where (!fromDate.HasValue || purchase.PurchaseDate >= fromDate.Value)
                 && (!toDate.HasValue || purchase.PurchaseDate <= toDate.Value)
                 && (searchText == null
                     || purchase.Reference.Contains(searchText)
-                    || supplier.Name.Contains(searchText)
-                    || (supplier.Identifier != null && supplier.Identifier.Contains(searchText)))
+                    || (supplier != null && supplier.Name.Contains(searchText))
+                    || (supplier != null && supplier.Identifier != null && supplier.Identifier.Contains(searchText)))
             select new ObligationProjection
             {
                 TargetType = SupplierPaymentObligationTargetType.Purchase,
@@ -231,22 +253,21 @@ internal sealed class SupplierPaymentObligationReadService(
                 Reference = purchase.Reference,
                 BusinessDate = purchase.PurchaseDate,
                 PartyId = purchase.SupplierId,
-                PartyName = supplier.Name,
-                OriginalAmountMinor = purchase.TotalAmountMinor,
-                QueryPaidAmountMinor = dbContext.SupplierPaymentAllocations
-                    .Where(allocation => allocation.PurchaseId == purchase.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0
+                PartyName = supplier == null ? null : supplier.Name,
+                OriginalAmountMinor = purchase.TotalAmountMinor
             };
 
         var initials =
             from payable in dbContext.InitialSupplierPayables.AsNoTracking()
-            join supplier in dbContext.Suppliers.AsNoTracking() on payable.SupplierId equals supplier.Id
+            join supplier in dbContext.Suppliers.AsNoTracking()
+                on payable.SupplierId equals supplier.Id into suppliers
+            from supplier in suppliers.DefaultIfEmpty()
             where (!fromDate.HasValue || payable.PayableDate >= fromDate.Value)
                 && (!toDate.HasValue || payable.PayableDate <= toDate.Value)
                 && (searchText == null
                     || payable.Reference.Contains(searchText)
-                    || supplier.Name.Contains(searchText)
-                    || (supplier.Identifier != null && supplier.Identifier.Contains(searchText)))
+                    || (supplier != null && supplier.Name.Contains(searchText))
+                    || (supplier != null && supplier.Identifier != null && supplier.Identifier.Contains(searchText)))
             select new ObligationProjection
             {
                 TargetType = SupplierPaymentObligationTargetType.InitialSupplierPayable,
@@ -255,25 +276,18 @@ internal sealed class SupplierPaymentObligationReadService(
                 Reference = payable.Reference,
                 BusinessDate = payable.PayableDate,
                 PartyId = payable.SupplierId,
-                PartyName = supplier.Name,
-                OriginalAmountMinor = payable.InitialAmountMinor,
-                QueryPaidAmountMinor = dbContext.SupplierPaymentAllocations
-                    .Where(allocation => allocation.InitialSupplierPayableId == payable.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0
+                PartyName = supplier == null ? null : supplier.Name,
+                OriginalAmountMinor = payable.InitialAmountMinor
             };
 
         return purchases.Concat(initials);
     }
 
-    private static IQueryable<ObligationProjection> ApplyStatus(
-        IQueryable<ObligationProjection> query,
+    private static IEnumerable<SupplierPaymentObligationListItem> ApplyStatus(
+        IEnumerable<SupplierPaymentObligationListItem> query,
         PaymentObligationStatus? status) => status switch
         {
-            PaymentObligationStatus.Outstanding => query.Where(item => item.QueryPaidAmountMinor == 0),
-            PaymentObligationStatus.PartiallyPaid => query.Where(item =>
-                item.QueryPaidAmountMinor > 0 && item.QueryPaidAmountMinor < item.OriginalAmountMinor),
-            PaymentObligationStatus.Settled => query.Where(item =>
-                item.QueryPaidAmountMinor == item.OriginalAmountMinor),
+            PaymentObligationStatus exactStatus => query.Where(item => item.Status == exactStatus),
             _ => query
         };
 
@@ -301,9 +315,8 @@ internal sealed class SupplierPaymentObligationReadService(
         public required string Reference { get; init; }
         public DateOnly BusinessDate { get; init; }
         public long PartyId { get; init; }
-        public required string PartyName { get; init; }
+        public string? PartyName { get; init; }
         public long OriginalAmountMinor { get; init; }
-        public long QueryPaidAmountMinor { get; init; }
     }
 
     private sealed class HistoryProjection

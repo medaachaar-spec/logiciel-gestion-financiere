@@ -13,11 +13,10 @@ public sealed class PaymentObligationReadServiceTests
         using var database = new PaymentReadTestDatabase();
         var responsible = database.AddUser("customer-obligations", UserRole.Responsable);
         var atlas = database.AddClient("Atlas Distribution");
-        var secondClient = database.AddClient("Second Client");
         var unpaid = database.AddSale(responsible, "VTE-UNPAID", 300_000, atlas.Id);
         var settled = database.AddSale(responsible, "VTE-SETTLED", 300_000, atlas.Id);
         var partial = database.AddSale(responsible, "VTE-PARTIAL", 500_000, atlas.Id);
-        var other = database.AddSale(responsible, "VTE-OTHER", 400_000, secondClient.Id);
+        var other = database.AddSale(responsible, "VTE-OTHER", 400_000, atlas.Id);
         var initial = database.AddReceivable(responsible, atlas, "CRI-INITIAL", 100_000);
 
         foreach (var amount in new long[] { 50_000, 100_000, 120_000, 30_000 })
@@ -271,7 +270,7 @@ public sealed class PaymentObligationReadServiceTests
     }
 
     [Fact]
-    public async Task Obligation_page_query_count_is_constant_as_row_count_grows()
+    public async Task Obligation_candidate_validation_query_count_is_batched_as_row_count_grows()
     {
         using var database = new PaymentReadTestDatabase();
         var responsible = database.AddUser("obligation-query-count", UserRole.Responsable);
@@ -294,8 +293,39 @@ public sealed class PaymentObligationReadServiceTests
         Assert.True(manyRows.Success);
         Assert.Equal(1, oneRow.TotalCount);
         Assert.Equal(21, manyRows.TotalCount);
+        Assert.Equal(3, oneRowCommandCount);
         Assert.Equal(oneRowCommandCount, manyRowCommandCount);
-        Assert.InRange(manyRowCommandCount, 1, 8);
+        Assert.Equal(3, manyRowCommandCount);
+    }
+
+    [Fact]
+    public async Task Typed_target_identity_keeps_colliding_document_and_initial_ids_distinct()
+    {
+        using var database = new PaymentReadTestDatabase();
+        var responsible = database.AddUser("obligation-typed-identity", UserRole.Responsable);
+        var client = database.AddClient("Typed customer");
+        var supplier = database.AddSupplier("Typed supplier");
+        var sale = database.AddSale(responsible, "VTE-ID-1", 10_000, client.Id);
+        var receivable = database.AddReceivable(responsible, client, "CRI-ID-1", 20_000);
+        var purchase = database.AddPurchase(responsible, supplier, "ACH-ID-1", 30_000);
+        var payable = database.AddPayable(responsible, supplier, "DFI-ID-1", 40_000);
+        Assert.Equal(sale.Id, receivable.Id);
+        Assert.Equal(purchase.Id, payable.Id);
+
+        await database.AuthenticateAsync(responsible);
+        var customerSale = await database.CustomerObligationReadService.GetDetailAsync(
+            CustomerPaymentObligationTargetType.Sale, sale.Id);
+        var customerInitial = await database.CustomerObligationReadService.GetDetailAsync(
+            CustomerPaymentObligationTargetType.InitialCustomerReceivable, receivable.Id);
+        var supplierPurchase = await database.SupplierObligationReadService.GetDetailAsync(
+            SupplierPaymentObligationTargetType.Purchase, purchase.Id);
+        var supplierInitial = await database.SupplierObligationReadService.GetDetailAsync(
+            SupplierPaymentObligationTargetType.InitialSupplierPayable, payable.Id);
+
+        Assert.Equal("VTE-ID-1", customerSale.Item!.Reference);
+        Assert.Equal("CRI-ID-1", customerInitial.Item!.Reference);
+        Assert.Equal("ACH-ID-1", supplierPurchase.Item!.Reference);
+        Assert.Equal("DFI-ID-1", supplierInitial.Item!.Reference);
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using FinancialManagement.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinancialManagement.Infrastructure;
@@ -25,11 +26,17 @@ internal static class AllocationIntegrity
             {
                 PaymentId = allocation.CustomerPaymentId,
                 PaymentAmountMinor = payment == null ? null : payment.AmountMinor,
+                PaymentPartyId = payment == null ? null : payment.ClientId,
+                PaymentReference = payment == null ? null : payment.Reference,
+                PaymentMethod = payment == null ? null : payment.PaymentMethod,
                 DocumentId = allocation.SaleId,
                 InitialId = allocation.InitialCustomerReceivableId,
                 TargetAmountMinor = allocation.SaleId.HasValue
                     ? (document == null ? null : document.TotalAmountMinor)
                     : (initial == null ? null : initial.InitialAmountMinor),
+                TargetPartyId = allocation.SaleId.HasValue
+                    ? (document == null ? null : document.ClientId)
+                    : (initial == null ? null : initial.ClientId),
                 AmountMinor = allocation.AmountMinor
             },
             documentIds, initialIds, sourcePaymentId, cancellationToken);
@@ -52,11 +59,17 @@ internal static class AllocationIntegrity
             {
                 PaymentId = allocation.SupplierPaymentId,
                 PaymentAmountMinor = payment == null ? null : payment.AmountMinor,
+                PaymentPartyId = payment == null ? null : payment.SupplierId,
+                PaymentReference = payment == null ? null : payment.Reference,
+                PaymentMethod = payment == null ? null : payment.PaymentMethod,
                 DocumentId = allocation.PurchaseId,
                 InitialId = allocation.InitialSupplierPayableId,
                 TargetAmountMinor = allocation.PurchaseId.HasValue
                     ? (document == null ? null : document.TotalAmountMinor)
                     : (initial == null ? null : initial.InitialAmountMinor),
+                TargetPartyId = allocation.PurchaseId.HasValue
+                    ? (document == null ? null : document.SupplierId)
+                    : (initial == null ? null : initial.SupplierId),
                 AmountMinor = allocation.AmountMinor
             },
             documentIds, initialIds, sourcePaymentId, cancellationToken);
@@ -123,6 +136,10 @@ internal static class AllocationIntegrity
     private static bool IsValidRow(Row row) =>
         row.AmountMinor > 0
         && row.PaymentAmountMinor is > 0
+        && row.PaymentPartyId == row.TargetPartyId
+        && !string.IsNullOrWhiteSpace(row.PaymentReference)
+        && row.PaymentMethod is PaymentMethod paymentMethod
+        && Enum.IsDefined(paymentMethod)
         && row.DocumentId.HasValue != row.InitialId.HasValue
         && row.TargetAmountMinor is > 0
         && row.AmountMinor <= row.TargetAmountMinor.Value;
@@ -151,9 +168,13 @@ internal static class AllocationIntegrity
     {
         public long PaymentId { get; init; }
         public long? PaymentAmountMinor { get; init; }
+        public long? PaymentPartyId { get; init; }
+        public string? PaymentReference { get; init; }
+        public PaymentMethod? PaymentMethod { get; init; }
         public long? DocumentId { get; init; }
         public long? InitialId { get; init; }
         public long? TargetAmountMinor { get; init; }
+        public long? TargetPartyId { get; init; }
         public long AmountMinor { get; init; }
     }
 }

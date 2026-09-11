@@ -1001,6 +1001,15 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
                 return;
             }
 
+            if (!payload.Result.Success)
+            {
+                HandleFailure(
+                    payload.Result.FailureKind,
+                    payload.Result.FailureMessage,
+                    preserveList: true);
+                return;
+            }
+
             ApplyPage(payload.Result);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

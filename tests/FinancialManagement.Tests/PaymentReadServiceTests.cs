@@ -808,7 +808,7 @@ internal sealed class PaymentReadTestDatabase : IDisposable
     private readonly IPasswordHasher passwordHasher;
     private readonly IAuthenticationService authenticationService;
 
-    public PaymentReadTestDatabase()
+    public PaymentReadTestDatabase(DbCommandInterceptor? readInterceptor = null)
     {
         databasePath = Path.Combine(
             Path.GetTempPath(),
@@ -817,7 +817,13 @@ internal sealed class PaymentReadTestDatabase : IDisposable
         CommandCounter = new CountingDbCommandInterceptor();
         services.AddInfrastructure($"Data Source={databasePath};Pooling=False");
         services.AddDbContext<FinancialManagementDbContext>(options =>
-            options.AddInterceptors(CommandCounter));
+        {
+            options.AddInterceptors(CommandCounter);
+            if (readInterceptor is not null)
+            {
+                options.AddInterceptors(readInterceptor);
+            }
+        });
         serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
@@ -847,6 +853,8 @@ internal sealed class PaymentReadTestDatabase : IDisposable
     public ISupplierPaymentObligationReadService SupplierObligationReadService { get; }
 
     public CountingDbCommandInterceptor CommandCounter { get; }
+
+    public string ConnectionString => $"Data Source={databasePath};Pooling=False";
 
     public User AddUser(string username, UserRole role)
     {
@@ -1061,6 +1069,63 @@ internal sealed class PaymentReadTestDatabase : IDisposable
         Context.SupplierPaymentAllocations.Add(allocation);
         Context.SaveChanges();
         return allocation;
+    }
+
+    public void AddCustomerAllocationExternally(
+        long paymentId,
+        long saleId,
+        long amountMinor)
+    {
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO CustomerPaymentAllocations
+                (CustomerPaymentId, SaleId, InitialCustomerReceivableId, AmountMinor, CreatedAtUtc)
+            VALUES ($paymentId, $saleId, NULL, $amountMinor, $createdAtUtc);
+            """;
+        command.Parameters.AddWithValue("$paymentId", paymentId);
+        command.Parameters.AddWithValue("$saleId", saleId);
+        command.Parameters.AddWithValue("$amountMinor", amountMinor);
+        command.Parameters.AddWithValue("$createdAtUtc", TestUtc);
+        command.ExecuteNonQuery();
+    }
+
+    public void AddSupplierAllocationExternally(
+        long paymentId,
+        long purchaseId,
+        long amountMinor)
+    {
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO SupplierPaymentAllocations
+                (SupplierPaymentId, PurchaseId, InitialSupplierPayableId, AmountMinor, CreatedAtUtc)
+            VALUES ($paymentId, $purchaseId, NULL, $amountMinor, $createdAtUtc);
+            """;
+        command.Parameters.AddWithValue("$paymentId", paymentId);
+        command.Parameters.AddWithValue("$purchaseId", purchaseId);
+        command.Parameters.AddWithValue("$amountMinor", amountMinor);
+        command.Parameters.AddWithValue("$createdAtUtc", TestUtc);
+        command.ExecuteNonQuery();
+    }
+
+    public void ExecuteExternally(string sql)
+    {
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using (var pragma = connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA foreign_keys = OFF;";
+            pragma.ExecuteNonQuery();
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
     }
 
     public void GrantView(User employee, PermissionModule module, bool canView)

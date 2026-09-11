@@ -40,23 +40,24 @@ internal sealed class CustomerPaymentObligationReadService(
             return CustomerPaymentObligationPageResult.Failed(
                 query, CustomerPaymentObligationReadFailureReason.InvalidPageNumber);
 
-        var obligations = BuildQuery(query.FromDate, query.ToDate, query.SearchText);
-        obligations = ApplyStatus(obligations, query.Status);
+        return await SqliteReadSnapshot.ExecuteAsync(
+            dbContext,
+            token => GetPageSnapshotAsync(query, (int)skip, token),
+            cancellationToken);
+    }
 
-        var totalCount = await obligations.CountAsync(cancellationToken);
-        var page = await obligations
-            .OrderByDescending(item => item.BusinessDate)
-            .ThenByDescending(item => item.TargetSort)
-            .ThenByDescending(item => item.TargetId)
-            .Skip((int)skip)
-            .Take(query.PageSize)
+    private async Task<CustomerPaymentObligationPageResult> GetPageSnapshotAsync(
+        CustomerPaymentObligationPageQuery query,
+        int skip,
+        CancellationToken cancellationToken)
+    {
+        var candidates = await BuildQuery(query.FromDate, query.ToDate, query.SearchText)
             .ToListAsync(cancellationToken);
-
-        var saleIds = page
+        var saleIds = candidates
             .Where(item => item.TargetType == CustomerPaymentObligationTargetType.Sale)
             .Select(item => item.TargetId)
             .ToHashSet();
-        var initialIds = page
+        var initialIds = candidates
             .Where(item => item.TargetType == CustomerPaymentObligationTargetType.InitialCustomerReceivable)
             .Select(item => item.TargetId)
             .ToHashSet();
@@ -66,8 +67,8 @@ internal sealed class CustomerPaymentObligationReadService(
             return CustomerPaymentObligationPageResult.Failed(
                 query, CustomerPaymentObligationReadFailureReason.DataIntegrityViolation);
 
-        var items = new List<CustomerPaymentObligationListItem>(page.Count);
-        foreach (var obligation in page)
+        var items = new List<CustomerPaymentObligationListItem>(candidates.Count);
+        foreach (var obligation in candidates)
         {
             var paid = obligation.TargetType == CustomerPaymentObligationTargetType.Sale
                 ? integrity.Documents.GetValueOrDefault(obligation.TargetId)
@@ -90,7 +91,14 @@ internal sealed class CustomerPaymentObligationReadService(
                 ToStatus(paid, remaining)));
         }
 
-        return CustomerPaymentObligationPageResult.Succeeded(query, items, totalCount);
+        var filtered = ApplyStatus(items, query.Status)
+            .OrderByDescending(item => item.BusinessDate)
+            .ThenByDescending(item => item.TargetType == CustomerPaymentObligationTargetType.Sale)
+            .ThenByDescending(item => item.TargetId)
+            .ToList();
+        var totalCount = filtered.Count;
+        var page = filtered.Skip(skip).Take(query.PageSize).ToList();
+        return CustomerPaymentObligationPageResult.Succeeded(query, page, totalCount);
     }
 
     public async Task<CustomerPaymentObligationDetailResult> GetDetailAsync(
@@ -106,6 +114,17 @@ internal sealed class CustomerPaymentObligationReadService(
             return CustomerPaymentObligationDetailResult.Failed(
                 CustomerPaymentObligationReadFailureReason.InvalidTarget);
 
+        return await SqliteReadSnapshot.ExecuteAsync(
+            dbContext,
+            token => GetDetailSnapshotAsync(targetType, targetId, token),
+            cancellationToken);
+    }
+
+    private async Task<CustomerPaymentObligationDetailResult> GetDetailSnapshotAsync(
+        CustomerPaymentObligationTargetType targetType,
+        long targetId,
+        CancellationToken cancellationToken)
+    {
         var obligation = await BuildQuery(null, null, null)
             .SingleOrDefaultAsync(
                 item => item.TargetType == targetType && item.TargetId == targetId,
@@ -236,21 +255,20 @@ internal sealed class CustomerPaymentObligationReadService(
                 BusinessDate = sale.SaleDate,
                 PartyId = sale.ClientId,
                 PartyName = client == null ? null : client.Name,
-                OriginalAmountMinor = sale.TotalAmountMinor,
-                QueryPaidAmountMinor = dbContext.CustomerPaymentAllocations
-                    .Where(allocation => allocation.SaleId == sale.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0
+                OriginalAmountMinor = sale.TotalAmountMinor
             };
 
         var initials =
             from receivable in dbContext.InitialCustomerReceivables.AsNoTracking()
-            join client in dbContext.Clients.AsNoTracking() on receivable.ClientId equals client.Id
+            join client in dbContext.Clients.AsNoTracking()
+                on receivable.ClientId equals client.Id into clients
+            from client in clients.DefaultIfEmpty()
             where (!fromDate.HasValue || receivable.ReceivableDate >= fromDate.Value)
                 && (!toDate.HasValue || receivable.ReceivableDate <= toDate.Value)
                 && (searchText == null
                     || receivable.Reference.Contains(searchText)
-                    || client.Name.Contains(searchText)
-                    || (client.Identifier != null && client.Identifier.Contains(searchText)))
+                    || (client != null && client.Name.Contains(searchText))
+                    || (client != null && client.Identifier != null && client.Identifier.Contains(searchText)))
             select new ObligationProjection
             {
                 TargetType = CustomerPaymentObligationTargetType.InitialCustomerReceivable,
@@ -259,25 +277,18 @@ internal sealed class CustomerPaymentObligationReadService(
                 Reference = receivable.Reference,
                 BusinessDate = receivable.ReceivableDate,
                 PartyId = receivable.ClientId,
-                PartyName = client.Name,
-                OriginalAmountMinor = receivable.InitialAmountMinor,
-                QueryPaidAmountMinor = dbContext.CustomerPaymentAllocations
-                    .Where(allocation => allocation.InitialCustomerReceivableId == receivable.Id)
-                    .Sum(allocation => (long?)allocation.AmountMinor) ?? 0
+                PartyName = client == null ? null : client.Name,
+                OriginalAmountMinor = receivable.InitialAmountMinor
             };
 
         return sales.Concat(initials);
     }
 
-    private static IQueryable<ObligationProjection> ApplyStatus(
-        IQueryable<ObligationProjection> query,
+    private static IEnumerable<CustomerPaymentObligationListItem> ApplyStatus(
+        IEnumerable<CustomerPaymentObligationListItem> query,
         PaymentObligationStatus? status) => status switch
         {
-            PaymentObligationStatus.Outstanding => query.Where(item => item.QueryPaidAmountMinor == 0),
-            PaymentObligationStatus.PartiallyPaid => query.Where(item =>
-                item.QueryPaidAmountMinor > 0 && item.QueryPaidAmountMinor < item.OriginalAmountMinor),
-            PaymentObligationStatus.Settled => query.Where(item =>
-                item.QueryPaidAmountMinor == item.OriginalAmountMinor),
+            PaymentObligationStatus exactStatus => query.Where(item => item.Status == exactStatus),
             _ => query
         };
 
@@ -287,7 +298,8 @@ internal sealed class CustomerPaymentObligationReadService(
         && item.OriginalAmountMinor > 0
         && paid >= 0
         && paid <= item.OriginalAmountMinor
-        && (item.PartyId is null || !string.IsNullOrWhiteSpace(item.PartyName));
+        && (item.TargetType == CustomerPaymentObligationTargetType.Sale && item.PartyId is null
+            || item.PartyId is > 0 && !string.IsNullOrWhiteSpace(item.PartyName));
 
     private static PaymentObligationStatus ToStatus(long paid, long remaining) =>
         remaining == 0
@@ -306,7 +318,6 @@ internal sealed class CustomerPaymentObligationReadService(
         public long? PartyId { get; init; }
         public string? PartyName { get; init; }
         public long OriginalAmountMinor { get; init; }
-        public long QueryPaidAmountMinor { get; init; }
     }
 
     private sealed class HistoryProjection
