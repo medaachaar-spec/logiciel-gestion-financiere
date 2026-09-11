@@ -10,9 +10,10 @@ public partial class LoginWindow : Window
 
     public LoginWindow(LoginViewModel viewModel)
     {
-        InitializeComponent();
+        ArgumentNullException.ThrowIfNull(viewModel);
         _viewModel = viewModel;
-        DataContext = viewModel;
+        InitializeComponent();
+        DataContext = _viewModel;
     }
 
     protected override void OnContentRendered(EventArgs e)
@@ -23,7 +24,7 @@ public partial class LoginWindow : Window
 
     protected override void OnClosing(CancelEventArgs e)
     {
-        if (_viewModel.IsBusy)
+        if (_viewModel?.IsBusy == true)
         {
             e.Cancel = true;
             return;

@@ -21,7 +21,7 @@ public sealed class BackupDialogService : IBackupDialogService
         var dialog = new OpenFileDialog
         {
             Title = "Choisir une sauvegarde à restaurer",
-            Filter = "Sauvegardes Gestion financière (*.fmbak)|*.fmbak",
+            Filter = "Sauvegardes Tresoria (*.fmbak)|*.fmbak",
             CheckFileExists = true,
             Multiselect = false
         };

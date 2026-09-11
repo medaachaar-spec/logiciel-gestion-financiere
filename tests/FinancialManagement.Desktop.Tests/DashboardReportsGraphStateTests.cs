@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using FinancialManagement.Application.Alerts;
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
@@ -87,6 +88,19 @@ public sealed class DashboardReportsGraphStateTests
         var converted = converter.Convert(value, typeof(Visibility), null!, System.Globalization.CultureInfo.InvariantCulture);
 
         Assert.Equal(expected, converted);
+    }
+
+    [Fact]
+    public void Dashboard_charts_keep_named_controls_inside_polished_chart_surfaces()
+    {
+        WpfTestHost.Invoke(() =>
+        {
+            var view = new DashboardView();
+            Render(view);
+
+            AssertChartSurface(view, "DashboardActivityChart");
+            AssertChartSurface(view, "DashboardCashFlowChart");
+        });
     }
 
     private static DashboardViewModel CreateDashboard(
@@ -208,5 +222,16 @@ public sealed class DashboardReportsGraphStateTests
         Assert.NotNull(emptyState);
         Assert.Equal(expectCharts ? Visibility.Visible : Visibility.Collapsed, chart.Visibility);
         Assert.Equal(expectCharts ? Visibility.Collapsed : Visibility.Visible, emptyState.Visibility);
+    }
+
+    private static void AssertChartSurface(FrameworkElement view, string chartName)
+    {
+        var chart = Assert.IsAssignableFrom<FrameworkElement>(view.FindName(chartName));
+        var chartGrid = Assert.IsType<Grid>(chart.Parent);
+        var chartSurface = Assert.IsType<Border>(chartGrid.Parent);
+
+        Assert.Equal(new CornerRadius(12), chartSurface.CornerRadius);
+        Assert.Equal(new Thickness(8, 6, 8, 2), chartSurface.Padding);
+        Assert.Equal(new Thickness(1), chartSurface.BorderThickness);
     }
 }

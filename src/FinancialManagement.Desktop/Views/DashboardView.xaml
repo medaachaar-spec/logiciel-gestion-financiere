@@ -14,22 +14,24 @@
         <SolidColorBrush x:Key="DashboardPurpleSoftBrush" Color="#F3F0FA" />
         <SolidColorBrush x:Key="DashboardOrangeSoftBrush" Color="#FFF4ED" />
         <SolidColorBrush x:Key="DashboardGreenSoftBrush" Color="#EDF8F2" />
+        <SolidColorBrush x:Key="DashboardChartSurfaceBrush" Color="#FAFCFE" />
+        <SolidColorBrush x:Key="DashboardChartBorderBrush" Color="#EDF1F5" />
 
         <Style x:Key="DashboardCardStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
-            <Setter Property="BorderBrush" Value="#E7EBEF" />
+            <Setter Property="BorderBrush" Value="#E3E9EF" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="CornerRadius" Value="16" />
             <Setter Property="Effect">
                 <Setter.Value>
-                    <DropShadowEffect BlurRadius="14" ShadowDepth="2" Opacity="0.07" Color="#17212B" />
+                    <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.065" Color="#17212B" />
                 </Setter.Value>
             </Setter>
         </Style>
 
         <Style x:Key="DashboardSectionTitleStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontSize" Value="19" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
@@ -144,9 +146,9 @@
 
         <DataTemplate x:Key="PrimaryMetricTemplate" DataType="{x:Type vm:DashboardMetricViewModel}">
             <Border Style="{StaticResource DashboardCardStyle}"
-                    Margin="0,0,12,12"
-                    Padding="15"
-                    MinHeight="112">
+                    Margin="0,0,14,14"
+                    Padding="18"
+                    MinHeight="120">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -160,7 +162,7 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding Title}"
                                    Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontSize="12"
+                                   FontSize="11.5"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
                         <Border Grid.Column="1" Width="32" Height="32" CornerRadius="9"
@@ -174,8 +176,8 @@
                         </Border>
                     </Grid>
                     <Viewbox Grid.Row="1" Stretch="Uniform" StretchDirection="DownOnly"
-                             HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,9,0,7">
-                        <TextBlock Text="{Binding Value}" FontSize="27">
+                             HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0,11,0,8">
+                        <TextBlock Text="{Binding Value}" FontSize="28">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
@@ -196,19 +198,19 @@
                     </Viewbox>
                     <TextBlock Grid.Row="2" Text="{Binding Subtitle}"
                                Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="10.5" />
+                               FontSize="11" />
                 </Grid>
             </Border>
         </DataTemplate>
 
         <DataTemplate x:Key="PositionMetricTemplate" DataType="{x:Type vm:DashboardMetricViewModel}">
             <Border Background="{StaticResource SurfaceBrush}"
-                    BorderBrush="{StaticResource BorderBrush}"
+                    BorderBrush="#E3E9EF"
                     BorderThickness="1"
-                    CornerRadius="12"
-                    Margin="0,0,10,10"
-                    Padding="15"
-                    MinHeight="105">
+                    CornerRadius="14"
+                    Margin="0,0,12,12"
+                    Padding="17"
+                    MinHeight="112">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -226,8 +228,8 @@
                                    TextWrapping="Wrap" />
                     </StackPanel>
                     <Viewbox Grid.Row="1" Stretch="Uniform" StretchDirection="DownOnly"
-                             HorizontalAlignment="Left" Margin="0,9,0,5">
-                        <TextBlock Text="{Binding Value}" FontSize="20"
+                             HorizontalAlignment="Left" Margin="0,10,0,6">
+                        <TextBlock Text="{Binding Value}" FontSize="21"
                                    FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
                     </Viewbox>
                     <TextBlock Grid.Row="2" Text="{Binding Subtitle}"
@@ -256,12 +258,12 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto"
                    HorizontalScrollBarVisibility="Disabled"
                   Focusable="False"
-                   Padding="0,0,6,0">
+                   Padding="0,0,10,0">
         <ScrollViewer.Resources>
             <Style TargetType="ScrollBar" BasedOn="{StaticResource DashboardPageScrollBarStyle}" />
         </ScrollViewer.Resources>
         <StackPanel>
-            <Grid Margin="0,0,0,10">
+            <Grid Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -278,7 +280,7 @@
                 </Button>
             </Grid>
 
-            <Border Style="{StaticResource DashboardCardStyle}" Padding="10" Margin="0,0,0,12">
+            <Border Style="{StaticResource DashboardCardStyle}" Padding="12" Margin="0,0,0,14">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -329,20 +331,20 @@
 
             <StackPanel Visibility="{Binding HasData, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <TextBlock Text="{Binding PeriodDescription}" Foreground="{StaticResource TextSecondaryBrush}"
-                           FontSize="11" Margin="2,0,0,6" />
+                           FontSize="11.5" Margin="2,0,0,8" />
                 <ItemsControl ItemsSource="{Binding PrimaryMetrics}" ItemTemplate="{StaticResource PrimaryMetricTemplate}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate><UniformGrid Columns="4" /></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                 </ItemsControl>
 
-                <Grid Margin="0,8,0,16">
+                <Grid Margin="0,10,0,22">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="18" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Style="{StaticResource DashboardCardStyle}" Padding="15" MinHeight="292">
+                    <Border Grid.Column="0" Style="{StaticResource DashboardCardStyle}" Padding="20" MinHeight="308">
                         <Grid>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                             <StackPanel>
@@ -350,33 +352,41 @@
                                 <TextBlock Text="{Binding ChartGranularityDescription, StringFormat=Ventes\, achats et dépenses · {0}}"
                                            Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" Margin="0,4,0,0" />
                             </StackPanel>
-                            <Grid Grid.Row="1" Margin="0,12,0,0">
-                                <lvc:CartesianChart x:Name="DashboardActivityChart"
-                                                    Series="{Binding ActivitySeries}"
-                                                    XAxes="{Binding ActivityXAxes}"
-                                                    YAxes="{Binding MoneyYAxes}"
-                                                    LegendPosition="Bottom"
-                                                    LegendTextSize="10"
-                                                    TooltipPosition="Top"
-                                                    Margin="8,0,8,0"
-                                                    AnimationsSpeed="0:0:0.25"
-                                                    Visibility="{Binding HasActivityData, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <Border x:Name="DashboardActivityEmptyState"
-                                        Background="#F8FAFC" CornerRadius="10" Margin="8,8,8,40"
-                                        IsHitTestVisible="False"
-                                        Visibility="{Binding HasActivityData, Converter={StaticResource InverseBooleanConverter}}">
-                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <TextBlock Text="&#xE9D2;" FontFamily="{StaticResource IconFontFamily}"
-                                                   FontSize="24" Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" />
-                                        <TextBlock Text="Aucune activité sur cette période" Margin="0,8,0,0"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
+                            <Border Grid.Row="1"
+                                    Margin="0,14,0,0"
+                                    Padding="8,6,8,2"
+                                    Background="{StaticResource DashboardChartSurfaceBrush}"
+                                    BorderBrush="{StaticResource DashboardChartBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12">
+                                <Grid>
+                                    <lvc:CartesianChart x:Name="DashboardActivityChart"
+                                                        Series="{Binding ActivitySeries}"
+                                                        XAxes="{Binding ActivityXAxes}"
+                                                        YAxes="{Binding MoneyYAxes}"
+                                                        LegendPosition="Bottom"
+                                                        LegendTextSize="10"
+                                                        TooltipPosition="Top"
+                                                        Margin="4,0"
+                                                        AnimationsSpeed="0:0:0.25"
+                                                        Visibility="{Binding HasActivityData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <Border x:Name="DashboardActivityEmptyState"
+                                            Background="#F8FAFC" CornerRadius="10" Margin="0,2,0,38"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding HasActivityData, Converter={StaticResource InverseBooleanConverter}}">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="&#xE9D2;" FontFamily="{StaticResource IconFontFamily}"
+                                                       FontSize="24" Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Aucune activité sur cette période" Margin="0,8,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="2" Style="{StaticResource DashboardCardStyle}" Padding="15" MinHeight="292">
+                    <Border Grid.Column="2" Style="{StaticResource DashboardCardStyle}" Padding="20" MinHeight="308">
                         <Grid>
                             <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                             <Grid>
@@ -400,34 +410,42 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Grid>
-                            <Grid Grid.Row="1" Margin="0,12,0,0">
-                                <lvc:CartesianChart x:Name="DashboardCashFlowChart"
-                                                    Series="{Binding CashFlowSeries}"
-                                                    XAxes="{Binding CashFlowXAxes}"
-                                                    YAxes="{Binding MoneyYAxes}"
-                                                    LegendPosition="Bottom"
-                                                    LegendTextSize="10"
-                                                    TooltipPosition="Top"
-                                                    Margin="8,0,8,0"
-                                                    AnimationsSpeed="0:0:0.25"
-                                                    Visibility="{Binding HasCashFlowData, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <Border x:Name="DashboardCashFlowEmptyState"
-                                        Background="#F8FAFC" CornerRadius="10" Margin="8,8,8,40"
-                                        IsHitTestVisible="False"
-                                        Visibility="{Binding HasCashFlowData, Converter={StaticResource InverseBooleanConverter}}">
-                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <TextBlock Text="&#xE8C7;" FontFamily="{StaticResource IconFontFamily}"
-                                                   FontSize="24" Foreground="{StaticResource SuccessBrush}" HorizontalAlignment="Center" />
-                                        <TextBlock Text="Aucun flux sur cette période" Margin="0,8,0,0"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
+                            <Border Grid.Row="1"
+                                    Margin="0,14,0,0"
+                                    Padding="8,6,8,2"
+                                    Background="{StaticResource DashboardChartSurfaceBrush}"
+                                    BorderBrush="{StaticResource DashboardChartBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12">
+                                <Grid>
+                                    <lvc:CartesianChart x:Name="DashboardCashFlowChart"
+                                                        Series="{Binding CashFlowSeries}"
+                                                        XAxes="{Binding CashFlowXAxes}"
+                                                        YAxes="{Binding MoneyYAxes}"
+                                                        LegendPosition="Bottom"
+                                                        LegendTextSize="10"
+                                                        TooltipPosition="Top"
+                                                        Margin="4,0"
+                                                        AnimationsSpeed="0:0:0.25"
+                                                        Visibility="{Binding HasCashFlowData, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                    <Border x:Name="DashboardCashFlowEmptyState"
+                                            Background="#F8FAFC" CornerRadius="10" Margin="0,2,0,38"
+                                            IsHitTestVisible="False"
+                                            Visibility="{Binding HasCashFlowData, Converter={StaticResource InverseBooleanConverter}}">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="&#xE8C7;" FontFamily="{StaticResource IconFontFamily}"
+                                                       FontSize="24" Foreground="{StaticResource SuccessBrush}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Aucun flux sur cette période" Margin="0,8,0,0"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Border>
                 </Grid>
 
-                <Grid Margin="0,2,0,8">
+                <Grid Margin="0,4,0,12">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <TextBlock Text="Situation financière actuelle" Style="{StaticResource DashboardSectionTitleStyle}" />
                     <TextBlock Grid.Column="1" Text="{Binding TreasuryStatus}" Foreground="{StaticResource TextSecondaryBrush}"
@@ -439,13 +457,13 @@
                     </ItemsControl.ItemsPanel>
                 </ItemsControl>
 
-                <Grid Margin="0,0,0,22">
+                <Grid Margin="0,2,0,24">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="18" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <Border Grid.Column="0" Style="{StaticResource DashboardCardStyle}" Padding="20" MinHeight="252">
+                    <Border Grid.Column="0" Style="{StaticResource DashboardCardStyle}" Padding="22" MinHeight="260">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
@@ -469,7 +487,7 @@
                             <ItemsControl Grid.Row="2" ItemsSource="{Binding TopCustomerReceivables}"
                                           ItemTemplate="{StaticResource PartyBalanceTemplate}" />
                             <Border Grid.Row="3" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
-                                    Margin="0,10,0,0" Padding="0,5,0,0">
+                                    Margin="0,12,0,0" Padding="0,7,0,0">
                                 <Button Content="Voir les créances  ›" HorizontalAlignment="Right"
                                         Command="{Binding OpenCustomerReceivablesCommand}"
                                         Style="{StaticResource DashboardActionLinkStyle}" />
@@ -477,7 +495,7 @@
                         </Grid>
                     </Border>
 
-                    <Border Grid.Column="2" Style="{StaticResource DashboardCardStyle}" Padding="20" MinHeight="252">
+                    <Border Grid.Column="2" Style="{StaticResource DashboardCardStyle}" Padding="22" MinHeight="260">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
@@ -501,7 +519,7 @@
                             <ItemsControl Grid.Row="2" ItemsSource="{Binding TopSupplierPayables}"
                                           ItemTemplate="{StaticResource PartyBalanceTemplate}" />
                             <Border Grid.Row="3" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0"
-                                    Margin="0,10,0,0" Padding="0,5,0,0">
+                                    Margin="0,12,0,0" Padding="0,7,0,0">
                                 <Button Content="Voir les dettes  ›" HorizontalAlignment="Right"
                                         Command="{Binding OpenSupplierPayablesCommand}"
                                         Style="{StaticResource DashboardActionLinkStyle}" />

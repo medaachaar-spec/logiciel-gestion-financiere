@@ -1,7 +1,8 @@
 <Window x:Class="FinancialManagement.Desktop.LoginWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Connexion — Gestion financière"
+        Title="Connexion — Tresoria"
+        Icon="Resources/Branding/TresoriaAppIcon.ico"
         Width="480"
         Height="680"
         ResizeMode="NoResize"
@@ -10,57 +11,71 @@
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
     <Grid KeyboardNavigation.TabNavigation="Cycle">
-        <Border Width="400"
-                Margin="24"
-                Padding="40"
+        <Border x:Name="LoginCard"
+                Width="400"
+                Margin="32"
+                Padding="42,38,42,40"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1"
-                CornerRadius="14">
+                CornerRadius="18">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="24"
+                                  ShadowDepth="5"
+                                  Opacity="0.11"
+                                  Color="#17212B" />
+            </Border.Effect>
             <StackPanel>
-                <Border Width="48"
-                        Height="48"
-                        HorizontalAlignment="Left"
+                <Border Width="56"
+                        Height="56"
+                        HorizontalAlignment="Center"
                         Background="{StaticResource PrimarySoftBrush}"
-                        CornerRadius="10">
-                    <TextBlock Text="&#xE72E;"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               FontFamily="{StaticResource IconFontFamily}"
-                               FontSize="21"
-                               Foreground="{StaticResource PrimaryBrush}" />
+                        CornerRadius="14"
+                        ClipToBounds="True">
+                    <Image x:Name="LoginBrandIcon"
+                           Width="66"
+                           Height="66"
+                           Source="Resources/Branding/TresoriaAppIcon.png"
+                           Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           AutomationProperties.Name="Symbole Tresoria"
+                           IsHitTestVisible="False" />
                 </Border>
 
-                <TextBlock Margin="0,22,0,4"
-                           Text="GESTION FINANCIÈRE"
+                <TextBlock Margin="0,18,0,6"
+                           Text="TRESORIA"
                            FontSize="11"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource PrimaryBrush}" />
+                           Foreground="{StaticResource PrimaryBrush}"
+                           HorizontalAlignment="Center" />
                 <TextBlock Text="Connexion"
-                           FontSize="30"
+                           FontSize="29"
                            FontWeight="SemiBold"
-                           Foreground="{StaticResource TextPrimaryBrush}" />
-                <TextBlock Margin="0,8,0,28"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Margin="0,8,0,30"
                            Text="Accédez à votre espace de gestion."
-                           Style="{StaticResource BodyTextStyle}" />
+                           Style="{StaticResource BodyTextStyle}"
+                           TextAlignment="Center"
+                           HorizontalAlignment="Center" />
 
-                <TextBlock Margin="0,0,0,7"
+                <TextBlock Margin="0,0,0,8"
                            Text="Nom d'utilisateur"
                            Style="{StaticResource FieldLabelTextStyle}" />
                 <TextBox x:Name="UsernameInput"
-                         Height="44"
+                          Height="46"
                          TabIndex="0"
                          Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource InputTextBoxStyle}"
                          AutomationProperties.Name="Nom d'utilisateur" />
 
-                <TextBlock Margin="0,18,0,7"
+                <TextBlock Margin="0,20,0,8"
                            Text="Mot de passe"
                            Style="{StaticResource FieldLabelTextStyle}" />
                 <PasswordBox x:Name="PasswordInput"
-                             Height="44"
+                              Height="46"
                              TabIndex="1"
                              Style="{StaticResource InputPasswordBoxStyle}"
                              AutomationProperties.Name="Mot de passe" />
@@ -78,8 +93,8 @@
                                TextWrapping="Wrap" />
                 </Border>
 
-                <Button Margin="0,24,0,0"
-                        Height="46"
+                <Button Margin="0,26,0,0"
+                        Height="48"
                         TabIndex="2"
                         IsDefault="True"
                         IsEnabled="{Binding CanSubmit}"

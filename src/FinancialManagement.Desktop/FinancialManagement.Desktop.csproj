@@ -12,6 +12,15 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Resources\Branding\TresoriaAppIcon.ico</ApplicationIcon>
+    <AssemblyTitle>Tresoria</AssemblyTitle>
+    <Product>Tresoria</Product>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\Branding\TresoriaAppIcon.ico" />
+    <Resource Include="Resources\Branding\TresoriaAppIcon.png" />
+    <Resource Include="Resources\Branding\TresoriaSidebarLogo.png" />
+  </ItemGroup>
 
 </Project>

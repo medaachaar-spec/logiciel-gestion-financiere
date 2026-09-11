@@ -176,7 +176,7 @@
         <Setter Property="FontWeight" Value="Medium" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="Margin" Value="0,2" />
+        <Setter Property="Margin" Value="0,3" />
         <Setter Property="FocusVisualStyle">
             <Setter.Value>
                 <Style TargetType="Control">
@@ -185,7 +185,7 @@
                             <ControlTemplate TargetType="Control">
                                 <Border BorderBrush="{StaticResource PrimaryBrush}"
                                         BorderThickness="2"
-                                        CornerRadius="8" />
+                                        CornerRadius="9" />
                             </ControlTemplate>
                         </Setter.Value>
                     </Setter>
@@ -199,15 +199,15 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="8">
-                        <Grid MinHeight="42">
+                            CornerRadius="9">
+                        <Grid MinHeight="44">
                             <Border x:Name="SelectionIndicator"
                                     Width="3"
                                     Background="{StaticResource PrimaryBrush}"
                                     HorizontalAlignment="Left"
                                     CornerRadius="0,2,2,0"
                                     Opacity="0" />
-                            <ContentPresenter Margin="16,0,12,0"
+                            <ContentPresenter Margin="15,0,12,0"
                                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                               VerticalAlignment="Center" />
                         </Grid>
