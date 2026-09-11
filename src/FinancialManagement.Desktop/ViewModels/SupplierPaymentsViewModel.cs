@@ -174,6 +174,55 @@ public sealed class SupplierPaymentsViewModel : PaymentManagementViewModelBase
                     allocation.AllocatedAmountMinor)).ToArray()));
     }
 
+    internal override async Task<AdvancePaymentSourceResponse> GetAdvanceSourcesAsync(
+        string? searchText,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var sources = new List<AdvancePaymentSourceData>();
+        var pageNumber = 1;
+        while (true)
+        {
+            var result = await _paymentService.GetPageAsync(
+                new SupplierPaymentListQuery(
+                    pageNumber,
+                    pageSize,
+                    SearchText: searchText),
+                cancellationToken);
+            if (!result.Success)
+            {
+                var failure = MapListFailure(result.FailureReason);
+                return new AdvancePaymentSourceResponse(false, failure.Kind, failure.Message, []);
+            }
+
+            sources.AddRange(result.Items
+                .Where(item => item.SupplierId > 0 && item.UnallocatedAmountMinor > 0)
+                .Select(item => new AdvancePaymentSourceData(
+                    item.Id,
+                    item.Reference,
+                    item.PaymentDate,
+                    item.SupplierId,
+                    item.SupplierName,
+                    item.AmountMinor,
+                    item.PaymentMethod,
+                    item.AllocatedAmountMinor,
+                    item.UnallocatedAmountMinor)));
+
+            if (pageNumber >= result.TotalPages)
+            {
+                break;
+            }
+
+            pageNumber++;
+        }
+
+        return new AdvancePaymentSourceResponse(
+            true,
+            PaymentFailureKind.None,
+            null,
+            sources);
+    }
+
     internal override async Task<PartyLookupResponse> SearchPartiesAsync(
         string? searchText,
         int limit,

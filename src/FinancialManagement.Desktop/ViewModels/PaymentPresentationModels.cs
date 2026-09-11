@@ -76,6 +76,43 @@ public sealed class PaymentHistoryItemViewModel
     public string RemainingAfterPayment { get; }
 }
 
+public sealed class AdvancePaymentSourceItemViewModel
+{
+    internal AdvancePaymentSourceItemViewModel(AdvancePaymentSourceData item)
+    {
+        Id = item.Id;
+        PartyId = item.PartyId;
+        Reference = item.Reference;
+        PartyName = item.PartyName;
+        PaymentDate = item.PaymentDate.ToString("dd/MM/yyyy");
+        PaymentMethod = PaymentLabels.FormatPaymentMethod(item.PaymentMethod);
+        Amount = MoneyFormatter.FormatMinor(item.AmountMinor);
+        AllocatedAmount = MoneyFormatter.FormatMinor(item.AllocatedAmountMinor);
+        AvailableAmount = MoneyFormatter.FormatMinor(item.UnallocatedAmountMinor);
+        UnallocatedAmountMinor = item.UnallocatedAmountMinor;
+    }
+
+    internal long Id { get; }
+
+    internal long PartyId { get; }
+
+    public string Reference { get; }
+
+    public string PartyName { get; }
+
+    public string PaymentDate { get; }
+
+    public string PaymentMethod { get; }
+
+    public string Amount { get; }
+
+    public string AllocatedAmount { get; }
+
+    public string AvailableAmount { get; }
+
+    internal long UnallocatedAmountMinor { get; }
+}
+
 public sealed class PaymentAllocationDetailItemViewModel
 {
     internal PaymentAllocationDetailItemViewModel(PaymentAllocationDetailData item)
@@ -247,6 +284,23 @@ internal sealed record PaymentDetailResponse(
     PaymentFailureKind FailureKind,
     string? FailureMessage,
     PaymentDetailData? Item);
+
+internal sealed record AdvancePaymentSourceData(
+    long Id,
+    string Reference,
+    DateOnly PaymentDate,
+    long PartyId,
+    string PartyName,
+    long AmountMinor,
+    PaymentMethod PaymentMethod,
+    long AllocatedAmountMinor,
+    long UnallocatedAmountMinor);
+
+internal sealed record AdvancePaymentSourceResponse(
+    bool Success,
+    PaymentFailureKind FailureKind,
+    string? FailureMessage,
+    IReadOnlyList<AdvancePaymentSourceData> Items);
 
 internal sealed record PaymentHistoryData(
     long PaymentId,

@@ -17,6 +17,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private const int PageSize = 50;
     private const int PartyLookupLimit = 20;
     private const int ObligationLookupLimit = 50;
+    private const int AdvanceSourcePageSize = 200;
     private const string InvalidDateRangeMessage =
         "La date de début doit être antérieure ou égale à la date de fin.";
     private const string InvalidAmountMessage =
@@ -48,6 +49,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private readonly RelayCommand _cancelCreateConfirmationRelayCommand;
     private readonly AsyncRelayCommand _confirmCreateRelayCommand;
     private readonly AsyncRelayCommand _showAdvanceRelayCommand;
+    private readonly AsyncRelayCommand _searchAdvanceSourcesRelayCommand;
+    private readonly AsyncRelayCommand _selectAdvanceSourceRelayCommand;
+    private readonly RelayCommand _cancelAdvanceSourceRelayCommand;
     private readonly RelayCommand _cancelAdvanceRelayCommand;
     private readonly AsyncRelayCommand _applyAdvanceRelayCommand;
     private string _searchText = string.Empty;
@@ -68,6 +72,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private bool _isLoadingObligations;
     private bool _isSaving;
     private bool _isApplyingAdvance;
+    private bool _isLoadingAdvanceSources;
     private bool _permissionsLoaded;
     private bool _canViewPayments;
     private bool _canCreatePayment;
@@ -76,6 +81,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private bool _isCreateConfirmationVisible;
     private bool _isDetailVisible;
     private bool _isAdvanceVisible;
+    private bool _isAdvanceSourceVisible;
     private string? _listErrorMessage;
     private string? _workflowErrorMessage;
     private string? _successMessage;
@@ -83,6 +89,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private PaymentPartyLookupItemViewModel? _selectedPartyResult;
     private PaymentPartyLookupItemViewModel? _selectedParty;
     private string _obligationSearchText = string.Empty;
+    private string _advanceSourceSearchText = string.Empty;
+    private AdvancePaymentSourceItemViewModel? _selectedAdvanceSource;
     private string _paymentAmount = string.Empty;
     private string _observation = string.Empty;
     private PaymentMethodOptionViewModel? _selectedPaymentMethod;
@@ -215,7 +223,19 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             _ => IsCreateConfirmationVisible && CanCreatePayment && !IsBusy);
         _showAdvanceRelayCommand = new AsyncRelayCommand(
             _ => Track(ShowAdvanceAsync()),
-            _ => CanApplySelectedAdvance && !IsBusy);
+            _ => CanApplyAdvancePermission && CanViewPayments && !IsBusy && !HasOpenWorkflow);
+        _searchAdvanceSourcesRelayCommand = new AsyncRelayCommand(
+            _ => Track(LoadAdvanceSourcesAsync()),
+            _ => IsAdvanceSourceVisible && CanApplyAdvancePermission && !IsBusy);
+        _selectAdvanceSourceRelayCommand = new AsyncRelayCommand(
+            _ => Track(SelectAdvanceSourceAsync()),
+            _ => IsAdvanceSourceVisible
+                && CanApplyAdvancePermission
+                && SelectedAdvanceSource is not null
+                && !IsBusy);
+        _cancelAdvanceSourceRelayCommand = new RelayCommand(
+            _ => CancelAdvanceSource(),
+            _ => IsAdvanceSourceVisible && !IsBusy);
         _cancelAdvanceRelayCommand = new RelayCommand(
             _ => CancelAdvance(),
             _ => IsAdvanceVisible && !IsBusy);
@@ -241,6 +261,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         CancelCreateConfirmationCommand = _cancelCreateConfirmationRelayCommand;
         ConfirmCreateCommand = _confirmCreateRelayCommand;
         ShowAdvanceCommand = _showAdvanceRelayCommand;
+        SearchAdvanceSourcesCommand = _searchAdvanceSourcesRelayCommand;
+        SelectAdvanceSourceCommand = _selectAdvanceSourceRelayCommand;
+        CancelAdvanceSourceCommand = _cancelAdvanceSourceRelayCommand;
         CancelAdvanceCommand = _cancelAdvanceRelayCommand;
         ApplyAdvanceCommand = _applyAdvanceRelayCommand;
     }
@@ -250,6 +273,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     public ObservableCollection<PaymentPartyLookupItemViewModel> PartyResults { get; } = [];
 
     public ObservableCollection<PaymentObligationItemViewModel> Obligations { get; } = [];
+
+    public ObservableCollection<AdvancePaymentSourceItemViewModel> AdvanceSources { get; } = [];
 
     public ObservableCollection<PaymentAllocationDetailItemViewModel> DetailAllocations { get; } = [];
 
@@ -277,6 +302,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     public ICommand CancelCreateConfirmationCommand { get; }
     public ICommand ConfirmCreateCommand { get; }
     public ICommand ShowAdvanceCommand { get; }
+    public ICommand SearchAdvanceSourcesCommand { get; }
+    public ICommand SelectAdvanceSourceCommand { get; }
+    public ICommand CancelAdvanceSourceCommand { get; }
     public ICommand CancelAdvanceCommand { get; }
     public ICommand ApplyAdvanceCommand { get; }
 
@@ -429,12 +457,19 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         private set => SetBusyProperty(ref _isApplyingAdvance, value);
     }
 
+    public bool IsLoadingAdvanceSources
+    {
+        get => _isLoadingAdvanceSources;
+        private set => SetBusyProperty(ref _isLoadingAdvanceSources, value);
+    }
+
     public bool IsBusy => IsLoading
         || IsLoadingDetail
         || IsLookingUpParties
         || IsLoadingObligations
         || IsSaving
-        || IsApplyingAdvance;
+        || IsApplyingAdvance
+        || IsLoadingAdvanceSources;
 
     public bool HasPayments => Payments.Count > 0;
 
@@ -553,7 +588,25 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         }
     }
 
-    public bool HasOpenWorkflow => IsCreateVisible || IsDetailVisible || IsAdvanceVisible;
+    public bool IsAdvanceSourceVisible
+    {
+        get => _isAdvanceSourceVisible;
+        private set
+        {
+            if (SetProperty(ref _isAdvanceSourceVisible, value))
+            {
+                OnPropertyChanged(nameof(HasOpenWorkflow));
+                OnPropertyChanged(nameof(IsMainEnabled));
+                OnPropertyChanged(nameof(ShowNoAdvanceSourceState));
+                RaiseCommandCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasOpenWorkflow => IsCreateVisible
+        || IsDetailVisible
+        || IsAdvanceSourceVisible
+        || IsAdvanceVisible;
 
     public bool IsMainEnabled => !HasOpenWorkflow && !IsBusy;
 
@@ -643,6 +696,48 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         get => _obligationSearchText;
         set => SetProperty(ref _obligationSearchText, value);
     }
+
+    public string AdvanceSourceSearchText
+    {
+        get => _advanceSourceSearchText;
+        set
+        {
+            if (SetProperty(ref _advanceSourceSearchText, value))
+            {
+                OnPropertyChanged(nameof(AdvanceSourceEmptyMessage));
+            }
+        }
+    }
+
+    public AdvancePaymentSourceItemViewModel? SelectedAdvanceSource
+    {
+        get => _selectedAdvanceSource;
+        set
+        {
+            if (SetProperty(ref _selectedAdvanceSource, value))
+            {
+                RaiseCommandCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasAdvanceSources => AdvanceSources.Count > 0;
+
+    public bool ShowNoAdvanceSourceState => IsAdvanceSourceVisible
+        && !IsLoadingAdvanceSources
+        && !HasAdvanceSources;
+
+    public string AdvanceSourceEmptyMessage => string.IsNullOrWhiteSpace(AdvanceSourceSearchText)
+        ? "Aucun paiement avec un montant disponible."
+        : "Aucun paiement disponible ne correspond à la recherche.";
+
+    public string AdvanceTargetSearchLabel => _partyKindLower == "client"
+        ? "Rechercher une créance / vente à régler"
+        : "Rechercher une dette / achat à régler";
+
+    public string AdvanceTargetEmptyMessage => _partyKindLower == "client"
+        ? "Aucune créance ou vente à régler disponible."
+        : "Aucune dette ou achat à régler disponible.";
 
     public bool HasObligations => Obligations.Count > 0;
 
@@ -1503,7 +1598,174 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     private async Task ShowAdvanceAsync(CancellationToken cancellationToken = default)
     {
-        if (!CanApplySelectedAdvance || _selectedDetail is null || IsBusy)
+        if (!CanApplyAdvancePermission || !CanViewPayments || IsBusy || HasOpenWorkflow)
+        {
+            return;
+        }
+
+        ClearDetail();
+        ClearAdvanceSources();
+        AdvanceSourceSearchText = string.Empty;
+        WorkflowErrorMessage = null;
+        IsAdvanceSourceVisible = true;
+        await LoadAdvanceSourcesAsync(cancellationToken);
+    }
+
+    private async Task LoadAdvanceSourcesAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsAdvanceSourceVisible || !CanApplyAdvancePermission || IsBusy)
+        {
+            return;
+        }
+
+        IsLoadingAdvanceSources = true;
+        WorkflowErrorMessage = null;
+        SelectedAdvanceSource = null;
+        ClearAdvanceSources();
+        using var operationCancellation = CreateOperationCancellation(cancellationToken);
+        var token = operationCancellation.Token;
+        var version = Interlocked.Increment(ref _requestVersion);
+
+        try
+        {
+            if (!TryCaptureAuthenticatedSession(out var identity))
+            {
+                ClearProtectedState("Votre session n'est plus active.");
+                return;
+            }
+
+            var result = await _operationCoordinator.RunAsync(
+                operationToken => GetAdvanceSourcesAsync(
+                    NormalizeOptionalText(AdvanceSourceSearchText),
+                    AdvanceSourcePageSize,
+                    operationToken),
+                token);
+            if (!CanApplyResult(identity, version, token))
+            {
+                FailClosedIfSessionChanged(identity);
+                return;
+            }
+
+            if (!result.Success)
+            {
+                HandleFailure(result.FailureKind, result.FailureMessage, preserveList: true);
+                return;
+            }
+
+            foreach (var item in result.Items.Where(item =>
+                         item.PartyId > 0 && item.UnallocatedAmountMinor > 0))
+            {
+                AdvanceSources.Add(new AdvancePaymentSourceItemViewModel(item));
+            }
+
+            NotifyAdvanceSourcesChanged();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Expected when navigating away or logging out.
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("{0} advance source loading failed: {1}", PageTitle, exception);
+            if (IsCurrentView && version == Volatile.Read(ref _requestVersion))
+            {
+                WorkflowErrorMessage = "Impossible de charger les paiements disponibles.";
+            }
+        }
+        finally
+        {
+            if (IsCurrentView && version == Volatile.Read(ref _requestVersion))
+            {
+                IsLoadingAdvanceSources = false;
+                OnPropertyChanged(nameof(ShowNoAdvanceSourceState));
+            }
+        }
+    }
+
+    private async Task SelectAdvanceSourceAsync(CancellationToken cancellationToken = default)
+    {
+        var selectedSource = SelectedAdvanceSource;
+        if (!IsAdvanceSourceVisible
+            || !CanApplyAdvancePermission
+            || selectedSource is null
+            || IsBusy)
+        {
+            return;
+        }
+
+        IsLoadingAdvanceSources = true;
+        WorkflowErrorMessage = null;
+        using var operationCancellation = CreateOperationCancellation(cancellationToken);
+        var token = operationCancellation.Token;
+        var version = Interlocked.Increment(ref _requestVersion);
+
+        try
+        {
+            if (!TryCaptureAuthenticatedSession(out var identity))
+            {
+                ClearProtectedState("Votre session n'est plus active.");
+                return;
+            }
+
+            var detailResult = await _operationCoordinator.RunAsync(
+                operationToken => GetDetailAsync(selectedSource.Id, operationToken),
+                token);
+            if (!CanApplyResult(identity, version, token))
+            {
+                FailClosedIfSessionChanged(identity);
+                return;
+            }
+
+            if (!detailResult.Success || detailResult.Item is null)
+            {
+                HandleFailure(
+                    detailResult.FailureKind,
+                    detailResult.FailureMessage,
+                    preserveList: true);
+                return;
+            }
+
+            if (detailResult.Item.PartyId is not > 0
+                || detailResult.Item.UnallocatedAmountMinor <= 0)
+            {
+                AdvanceSources.Remove(selectedSource);
+                SelectedAdvanceSource = null;
+                NotifyAdvanceSourcesChanged();
+                WorkflowErrorMessage =
+                    "Cette avance n'est plus disponible. Actualisez les paiements disponibles.";
+                return;
+            }
+
+            ApplyDetail(detailResult.Item);
+            IsAdvanceSourceVisible = false;
+            ClearAdvanceSources();
+            IsLoadingAdvanceSources = false;
+            await PrepareAdvanceAllocationAsync(token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Expected when navigating away or logging out.
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("{0} advance source selection failed: {1}", PageTitle, exception);
+            if (IsCurrentView && version == Volatile.Read(ref _requestVersion))
+            {
+                WorkflowErrorMessage = "Impossible de sélectionner ce paiement.";
+            }
+        }
+        finally
+        {
+            if (IsCurrentView && version == Volatile.Read(ref _requestVersion))
+            {
+                IsLoadingAdvanceSources = false;
+            }
+        }
+    }
+
+    private async Task PrepareAdvanceAllocationAsync(CancellationToken cancellationToken)
+    {
+        if (!CanApplySelectedAdvance || _selectedDetail is null)
         {
             return;
         }
@@ -1550,6 +1812,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         var token = operationCancellation.Token;
         var version = Interlocked.Increment(ref _requestVersion);
         var paymentId = _selectedDetail.Id;
+        var detailTarget = allocations[0];
 
         try
         {
@@ -1576,6 +1839,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
             IsAdvanceVisible = false;
             ClearObligations();
+            ClearAdvanceSources();
             SuccessMessage = "Avance affectée.";
 
             var pageResult = await _operationCoordinator.RunAsync(
@@ -1585,15 +1849,22 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             {
                 ApplyPage(pageResult);
             }
+            else if (CanApplyResult(identity, version, token))
+            {
+                ListErrorMessage = "L'avance est affectée, mais la liste n'a pas pu être actualisée.";
+            }
 
             var detailResult = await _operationCoordinator.RunAsync(
-                operationToken => GetDetailAsync(paymentId, operationToken),
+                operationToken => GetObligationDetailAsync(
+                    detailTarget.TargetKind,
+                    detailTarget.TargetId,
+                    operationToken),
                 token);
             if (CanApplyResult(identity, version, token)
                 && detailResult.Success
                 && detailResult.Item is not null)
             {
-                ApplyDetail(detailResult.Item);
+                ApplyObligationDetail(detailResult.Item);
                 IsDetailVisible = true;
             }
         }
@@ -1815,12 +2086,18 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     {
         IsAdvanceVisible = false;
         ClearObligations();
+        ClearDetail();
         WorkflowErrorMessage = null;
         OnPropertyChanged(nameof(RemainingSummaryLabel));
-        if (_selectedDetail is not null)
-        {
-            IsDetailVisible = true;
-        }
+    }
+
+    private void CancelAdvanceSource()
+    {
+        IsAdvanceSourceVisible = false;
+        AdvanceSourceSearchText = string.Empty;
+        ClearAdvanceSources();
+        ClearDetail();
+        WorkflowErrorMessage = null;
     }
 
     private void ClearSelectedParty()
@@ -1868,11 +2145,13 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     {
         ClearPaymentList();
         ClearObligations();
+        ClearAdvanceSources();
         PartyResults.Clear();
         ClearDetail();
         IsCreateVisible = false;
         IsCreateConfirmationVisible = false;
         IsDetailVisible = false;
+        IsAdvanceSourceVisible = false;
         IsAdvanceVisible = false;
         IsLoading = false;
         IsLoadingDetail = false;
@@ -1880,6 +2159,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         IsLoadingObligations = false;
         IsSaving = false;
         IsApplyingAdvance = false;
+        IsLoadingAdvanceSources = false;
         _permissionsLoaded = false;
         CanViewPayments = false;
         CanCreatePayment = false;
@@ -1934,6 +2214,13 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         Obligations.Clear();
         NotifyObligationsChanged();
         UpdateAllocationSummary();
+    }
+
+    private void ClearAdvanceSources()
+    {
+        AdvanceSources.Clear();
+        SelectedAdvanceSource = null;
+        NotifyAdvanceSourcesChanged();
     }
 
     private void ObligationOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -2065,6 +2352,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             OnPropertyChanged(nameof(IsBusy));
             OnPropertyChanged(nameof(IsMainEnabled));
             OnPropertyChanged(nameof(ShowEmptyState));
+            OnPropertyChanged(nameof(ShowNoAdvanceSourceState));
             RaiseCommandCanExecuteChanged();
         }
     }
@@ -2085,6 +2373,12 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     {
         OnPropertyChanged(nameof(HasObligations));
         OnPropertyChanged(nameof(ShowNoObligationState));
+    }
+
+    private void NotifyAdvanceSourcesChanged()
+    {
+        OnPropertyChanged(nameof(HasAdvanceSources));
+        OnPropertyChanged(nameof(ShowNoAdvanceSourceState));
     }
 
     private void NotifyFilterStateChanged()
@@ -2121,6 +2415,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         _cancelCreateConfirmationRelayCommand?.RaiseCanExecuteChanged();
         _confirmCreateRelayCommand?.RaiseCanExecuteChanged();
         _showAdvanceRelayCommand?.RaiseCanExecuteChanged();
+        _searchAdvanceSourcesRelayCommand?.RaiseCanExecuteChanged();
+        _selectAdvanceSourceRelayCommand?.RaiseCanExecuteChanged();
+        _cancelAdvanceSourceRelayCommand?.RaiseCanExecuteChanged();
         _cancelAdvanceRelayCommand?.RaiseCanExecuteChanged();
         _applyAdvanceRelayCommand?.RaiseCanExecuteChanged();
     }
@@ -2134,6 +2431,11 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
 
     internal abstract Task<PaymentDetailResponse> GetDetailAsync(
         long paymentId,
+        CancellationToken cancellationToken);
+
+    internal abstract Task<AdvancePaymentSourceResponse> GetAdvanceSourcesAsync(
+        string? searchText,
+        int pageSize,
         CancellationToken cancellationToken);
 
     internal abstract Task<PaymentObligationDetailResponse> GetObligationDetailAsync(
