@@ -80,6 +80,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IExpenseCategoryLookupService, ExpenseCategoryLookupService>();
         services.AddScoped<IEmployeeLookupService, EmployeeLookupService>();
         services.AddScoped<ICustomerPaymentService, CustomerPaymentService>();
+        services.AddScoped<ICustomerPaymentReceiptService, CustomerPaymentReceiptService>();
         services.AddScoped<ICustomerPaymentObligationReadService, CustomerPaymentObligationReadService>();
         services.AddScoped<ICustomerPaymentObligationLookupService, CustomerPaymentObligationLookupService>();
         services.AddScoped<ISupplierPaymentService, SupplierPaymentService>();

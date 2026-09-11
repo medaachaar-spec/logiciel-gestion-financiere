@@ -224,7 +224,21 @@
                         Padding="9"
                         Margin="0,0,0,8"
                         Visibility="{Binding HasSuccessMessage, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <TextBlock Text="{Binding SuccessMessage}" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding SuccessMessage}" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                        <Button Grid.Column="1"
+                                Width="142"
+                                Height="30"
+                                Margin="12,0,0,0"
+                                Content="Voir le reçu"
+                                Command="{Binding OpenCustomerReceiptCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Visibility="{Binding HasNewCustomerReceipt, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </Grid>
                 </Border>
                 <TextBlock Text="{Binding ListErrorMessage}"
                            Foreground="{StaticResource DangerBrush}"
@@ -580,7 +594,7 @@
                         </UniformGrid>
                     </Border>
                     <TextBlock Grid.Row="3" Text="{Binding DetailHistoryTitle}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,7" />
-                    <DataGrid x:Name="PaymentHistoryDataGrid" Grid.Row="4" ItemsSource="{Binding DetailHistory}" Style="{StaticResource PaymentHistoryDataGridStyle}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserResizeRows="False" CanUserSortColumns="False" SelectionMode="Single" SelectionUnit="FullRow" MaxHeight="266" ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasDetailHistory, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <DataGrid x:Name="PaymentHistoryDataGrid" Grid.Row="4" ItemsSource="{Binding DetailHistory}" SelectedItem="{Binding SelectedHistory, Mode=TwoWay}" Style="{StaticResource PaymentHistoryDataGridStyle}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" CanUserResizeRows="False" CanUserSortColumns="False" SelectionMode="Single" SelectionUnit="FullRow" MaxHeight="266" ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasDetailHistory, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Date / heure" Binding="{Binding PaymentTimestamp}" Width="125" ElementStyle="{StaticResource PaymentHistoryCellTextStyle}" />
                             <DataGridTextColumn Header="Référence paiement" Binding="{Binding PaymentReference}" Width="*" ElementStyle="{StaticResource PaymentHistoryCellTextStyle}" />
@@ -591,9 +605,18 @@
                         </DataGrid.Columns>
                     </DataGrid>
                     <Grid Grid.Row="5" Margin="0,14,0,0">
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                         <TextBlock Text="Aucun règlement affecté à cette obligation." VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" Visibility="{Binding HasDetailHistory, Converter={StaticResource InverseBooleanConverter}}" />
-                        <Button Grid.Column="1" Width="86" Height="34" Content="Fermer" Command="{Binding CloseDetailCommand}" Style="{StaticResource SecondaryButtonStyle}" />
+                        <Button Grid.Column="1"
+                                Width="172"
+                                Height="34"
+                                Margin="0,0,8,0"
+                                Content="Voir le reçu sélectionné"
+                                Command="{Binding OpenSelectedCustomerReceiptCommand}"
+                                CommandParameter="{Binding SelectedHistory}"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Visibility="{Binding SupportsCustomerReceipts, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <Button Grid.Column="2" Width="86" Height="34" Content="Fermer" Command="{Binding CloseDetailCommand}" Style="{StaticResource SecondaryButtonStyle}" />
                     </Grid>
                 </Grid>
             </Border>

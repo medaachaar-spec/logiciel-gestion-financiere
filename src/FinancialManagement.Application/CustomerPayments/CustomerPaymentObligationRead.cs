@@ -75,6 +75,7 @@ public sealed class CustomerPaymentObligationPageResult
 }
 
 public sealed record CustomerPaymentObligationHistoryItem(
+    long AllocationId,
     long PaymentId,
     string PaymentReference,
     DateOnly PaymentDate,

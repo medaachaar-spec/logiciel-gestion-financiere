@@ -188,6 +188,8 @@ public partial class App : System.Windows.Application
         services.AddTransient(provider => new Lazy<SuppliersViewModel>(
             () => provider.GetRequiredService<SuppliersViewModel>()));
         services.AddTransient<CustomerPaymentsViewModel>();
+        services.AddSingleton<ICustomerPaymentReceiptPrinter, WpfCustomerPaymentReceiptPrinter>();
+        services.AddTransient<ICustomerPaymentReceiptDialogService, CustomerPaymentReceiptDialogService>();
         services.AddTransient(provider => new Lazy<CustomerPaymentsViewModel>(
             () => provider.GetRequiredService<CustomerPaymentsViewModel>()));
         services.AddTransient<SupplierPaymentsViewModel>();

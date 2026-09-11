@@ -37,6 +37,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private readonly AsyncRelayCommand _previousPageRelayCommand;
     private readonly AsyncRelayCommand _nextPageRelayCommand;
     private readonly AsyncRelayCommand _openDetailRelayCommand;
+    private readonly AsyncRelayCommand _openCustomerReceiptRelayCommand;
+    private readonly AsyncRelayCommand _openSelectedCustomerReceiptRelayCommand;
     private readonly RelayCommand _showCreateForObligationRelayCommand;
     private readonly RelayCommand _closeDetailRelayCommand;
     private readonly RelayCommand _showCreateRelayCommand;
@@ -96,6 +98,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     private PaymentMethodOptionViewModel? _selectedPaymentMethod;
     private PaymentDetailData? _selectedDetail;
     private PaymentObligationDetailData? _selectedObligationDetail;
+    private PaymentHistoryItemViewModel? _selectedHistory;
+    private long? _lastCreatedPaymentId;
     private string _detailReference = string.Empty;
     private string _detailDate = string.Empty;
     private string _detailParty = string.Empty;
@@ -185,6 +189,18 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         _openDetailRelayCommand = new AsyncRelayCommand(
             parameter => Track(OpenDetailAsync(parameter as PaymentListItemViewModel)),
             parameter => CanLoadPage && parameter is PaymentListItemViewModel);
+        _openCustomerReceiptRelayCommand = new AsyncRelayCommand(
+            parameter => Track(OpenCustomerReceiptCoreAsync(parameter as PaymentHistoryItemViewModel)),
+            parameter => SupportsCustomerReceipts
+                && CanViewPayments
+                && !IsBusy
+                && _lastCreatedPaymentId is > 0);
+        _openSelectedCustomerReceiptRelayCommand = new AsyncRelayCommand(
+            parameter => Track(OpenCustomerReceiptCoreAsync(parameter as PaymentHistoryItemViewModel)),
+            parameter => SupportsCustomerReceipts
+                && CanViewPayments
+                && !IsBusy
+                && parameter is PaymentHistoryItemViewModel);
         _showCreateForObligationRelayCommand = new RelayCommand(
             parameter => ShowCreateForObligation(parameter as PaymentListItemViewModel),
             parameter => CanCreatePayment
@@ -249,6 +265,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         PreviousPageCommand = _previousPageRelayCommand;
         NextPageCommand = _nextPageRelayCommand;
         OpenDetailCommand = _openDetailRelayCommand;
+        OpenCustomerReceiptCommand = _openCustomerReceiptRelayCommand;
+        OpenSelectedCustomerReceiptCommand = _openSelectedCustomerReceiptRelayCommand;
         ShowCreateForObligationCommand = _showCreateForObligationRelayCommand;
         CloseDetailCommand = _closeDetailRelayCommand;
         ShowCreateCommand = _showCreateRelayCommand;
@@ -290,6 +308,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     public ICommand PreviousPageCommand { get; }
     public ICommand NextPageCommand { get; }
     public ICommand OpenDetailCommand { get; }
+    public ICommand OpenCustomerReceiptCommand { get; }
+    public ICommand OpenSelectedCustomerReceiptCommand { get; }
     public ICommand ShowCreateForObligationCommand { get; }
     public ICommand CloseDetailCommand { get; }
     public ICommand ShowCreateCommand { get; }
@@ -337,6 +357,10 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         : "HISTORIQUE DES PAIEMENTS";
 
     protected abstract string SingularPaymentLower { get; }
+
+    public virtual bool SupportsCustomerReceipts => false;
+
+    public bool HasNewCustomerReceipt => SupportsCustomerReceipts && _lastCreatedPaymentId is > 0;
 
     public string SearchText
     {
@@ -871,6 +895,16 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     }
 
     public bool HasDetailHistory => DetailHistory.Count > 0;
+
+    public PaymentHistoryItemViewModel? SelectedHistory
+    {
+        get => _selectedHistory;
+        set
+        {
+            if (SetProperty(ref _selectedHistory, value))
+                RaiseCommandCanExecuteChanged();
+        }
+    }
 
     public bool IsTargetObligationLocked
     {
@@ -1539,6 +1573,9 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             ResetCreateForm();
             IsCreateVisible = false;
             SuccessMessage = $"{_partyKindCapitalized} : paiement enregistré.";
+            _lastCreatedPaymentId = result.PaymentId;
+            OnPropertyChanged(nameof(HasNewCustomerReceipt));
+            RaiseCommandCanExecuteChanged();
 
             var pageResult = await _operationCoordinator.RunAsync(
                 operationToken => GetPageAsync(CreateQuery(1), operationToken),
@@ -1593,6 +1630,50 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
             {
                 IsSaving = false;
             }
+        }
+    }
+
+    private async Task OpenCustomerReceiptCoreAsync(
+        PaymentHistoryItemViewModel? history,
+        CancellationToken cancellationToken = default)
+    {
+        var paymentId = history?.PaymentId ?? _lastCreatedPaymentId;
+        if (!SupportsCustomerReceipts || paymentId is not > 0 || IsBusy)
+            return;
+
+        IsLoadingDetail = true;
+        WorkflowErrorMessage = null;
+        ListErrorMessage = null;
+        using var operationCancellation = CreateOperationCancellation(cancellationToken);
+        var token = operationCancellation.Token;
+
+        try
+        {
+            var result = await OpenCustomerReceiptAsync(paymentId.Value, token);
+            if (!result.Success)
+            {
+                if (IsDetailVisible)
+                    WorkflowErrorMessage = result.ErrorMessage;
+                else
+                    ListErrorMessage = result.ErrorMessage;
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Expected when navigating away or logging out.
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("Customer receipt preview failed: {0}", exception);
+            var message = "Impossible d'ouvrir l'aperçu du reçu.";
+            if (IsDetailVisible)
+                WorkflowErrorMessage = message;
+            else
+                ListErrorMessage = message;
+        }
+        finally
+        {
+            IsLoadingDetail = false;
         }
     }
 
@@ -1987,9 +2068,15 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         DetailRemainingAmount = MoneyFormatter.FormatMinor(item.RemainingAmountMinor);
         DetailStatus = PaymentLabels.FormatStatus(item.Status);
         DetailHistory.Clear();
+        SelectedHistory = null;
         foreach (var historyItem in item.History)
         {
             DetailHistory.Add(new PaymentHistoryItemViewModel(historyItem));
+        }
+        if (_lastCreatedPaymentId is long createdPaymentId)
+        {
+            SelectedHistory = DetailHistory.LastOrDefault(history =>
+                history.PaymentId == createdPaymentId);
         }
 
         OnPropertyChanged(nameof(HasDetailHistory));
@@ -2031,6 +2118,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     {
         ResetCreateForm();
         SuccessMessage = null;
+        ClearNewCustomerReceipt();
         IsCreateVisible = true;
     }
 
@@ -2047,6 +2135,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         ResetCreateForm();
         IsTargetObligationLocked = true;
         SuccessMessage = null;
+        ClearNewCustomerReceipt();
         SelectedParty = new PaymentPartyLookupItemViewModel(
             new PartyLookupData(obligation.PartyId.Value, obligation.PartyName, null));
 
@@ -2165,6 +2254,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         CanCreatePayment = false;
         CanApplyAdvancePermission = false;
         SuccessMessage = null;
+        ClearNewCustomerReceipt();
         WorkflowErrorMessage = null;
         ListErrorMessage = message;
         RaiseCommandCanExecuteChanged();
@@ -2198,6 +2288,7 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         DetailStatus = string.Empty;
         DetailAllocations.Clear();
         DetailHistory.Clear();
+        SelectedHistory = null;
         OnPropertyChanged(nameof(HasDetailAllocations));
         OnPropertyChanged(nameof(HasDetailHistory));
         OnPropertyChanged(nameof(CanApplySelectedAdvance));
@@ -2403,6 +2494,8 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
         _previousPageRelayCommand?.RaiseCanExecuteChanged();
         _nextPageRelayCommand?.RaiseCanExecuteChanged();
         _openDetailRelayCommand?.RaiseCanExecuteChanged();
+        _openCustomerReceiptRelayCommand?.RaiseCanExecuteChanged();
+        _openSelectedCustomerReceiptRelayCommand?.RaiseCanExecuteChanged();
         _showCreateForObligationRelayCommand?.RaiseCanExecuteChanged();
         _closeDetailRelayCommand?.RaiseCanExecuteChanged();
         _showCreateRelayCommand?.RaiseCanExecuteChanged();
@@ -2428,6 +2521,21 @@ public abstract class PaymentManagementViewModelBase : ViewModelBase
     internal abstract Task<PaymentPageData> GetPageAsync(
         PaymentListQueryData query,
         CancellationToken cancellationToken);
+
+    protected virtual Task<CustomerPaymentReceiptDialogResult> OpenCustomerReceiptAsync(
+        long paymentId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(CustomerPaymentReceiptDialogResult.Failed(
+            "Les reçus d'encaissement ne sont pas disponibles dans ce contexte."));
+
+    private void ClearNewCustomerReceipt()
+    {
+        if (_lastCreatedPaymentId is null)
+            return;
+        _lastCreatedPaymentId = null;
+        OnPropertyChanged(nameof(HasNewCustomerReceipt));
+        RaiseCommandCanExecuteChanged();
+    }
 
     internal abstract Task<PaymentDetailResponse> GetDetailAsync(
         long paymentId,

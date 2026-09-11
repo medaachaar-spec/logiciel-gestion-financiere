@@ -838,6 +838,8 @@ internal sealed class PaymentReadTestDatabase : IDisposable
         SupplierPaymentService = scope.ServiceProvider.GetRequiredService<ISupplierPaymentService>();
         CustomerObligationReadService = scope.ServiceProvider
             .GetRequiredService<ICustomerPaymentObligationReadService>();
+        CustomerReceiptService = scope.ServiceProvider
+            .GetRequiredService<ICustomerPaymentReceiptService>();
         SupplierObligationReadService = scope.ServiceProvider
             .GetRequiredService<ISupplierPaymentObligationReadService>();
     }
@@ -849,6 +851,8 @@ internal sealed class PaymentReadTestDatabase : IDisposable
     public ISupplierPaymentService SupplierPaymentService { get; }
 
     public ICustomerPaymentObligationReadService CustomerObligationReadService { get; }
+
+    public ICustomerPaymentReceiptService CustomerReceiptService { get; }
 
     public ISupplierPaymentObligationReadService SupplierObligationReadService { get; }
 

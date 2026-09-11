@@ -15,6 +15,7 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
     private readonly ICustomerPaymentObligationLookupService _obligationLookupService;
     private readonly ICustomerAdvanceService _advanceService;
     private readonly IClientLookupService _clientLookupService;
+    private readonly ICustomerPaymentReceiptDialogService? _receiptDialogService;
 
     public CustomerPaymentsViewModel(
         ICustomerPaymentService paymentService,
@@ -24,7 +25,8 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
         IClientLookupService clientLookupService,
         ICurrentUserSession currentUserSession,
         IAuthorizationService authorizationService,
-        DashboardOperationCoordinator operationCoordinator)
+        DashboardOperationCoordinator operationCoordinator,
+        ICustomerPaymentReceiptDialogService? receiptDialogService = null)
         : base(
             currentUserSession,
             authorizationService,
@@ -48,9 +50,19 @@ public sealed class CustomerPaymentsViewModel : PaymentManagementViewModelBase
         _obligationLookupService = obligationLookupService;
         _advanceService = advanceService;
         _clientLookupService = clientLookupService;
+        _receiptDialogService = receiptDialogService;
     }
 
     protected override string SingularPaymentLower => "encaissement";
+
+    public override bool SupportsCustomerReceipts => _receiptDialogService is not null;
+
+    protected override Task<CustomerPaymentReceiptDialogResult> OpenCustomerReceiptAsync(
+        long paymentId,
+        CancellationToken cancellationToken) =>
+        _receiptDialogService?.ShowAsync(paymentId, cancellationToken)
+        ?? Task.FromResult(CustomerPaymentReceiptDialogResult.Failed(
+            "Le service d'aperçu du reçu n'est pas disponible."));
 
     internal override async Task<PaymentPageData> GetPageAsync(
         PaymentListQueryData query,

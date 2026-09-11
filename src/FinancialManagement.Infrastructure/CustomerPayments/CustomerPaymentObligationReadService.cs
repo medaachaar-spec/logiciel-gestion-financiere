@@ -183,6 +183,7 @@ internal sealed class CustomerPaymentObligationReadService(
 
             cumulativePaid = checked(cumulativePaid + allocation.AllocatedAmountMinor);
             history.Add(new CustomerPaymentObligationHistoryItem(
+                allocation.AllocationId,
                 allocation.PaymentId,
                 allocation.PaymentReference,
                 allocation.PaymentDate,

@@ -360,6 +360,7 @@ public sealed class Aop05AdvanceWorkflowTests
                     FinancialManagement.Application.Payments.PaymentObligationStatus.Settled,
                     [
                         new CustomerPaymentObligationHistoryItem(
+                            201,
                             CustomerWorkflowState.SourcePaymentId,
                             "ENC-ADV-001",
                             PaymentDate,
@@ -369,6 +370,7 @@ public sealed class Aop05AdvanceWorkflowTests
                             70_000,
                             30_000),
                         new CustomerPaymentObligationHistoryItem(
+                            202,
                             CustomerWorkflowState.SourcePaymentId,
                             "ENC-ADV-001",
                             PaymentDate,

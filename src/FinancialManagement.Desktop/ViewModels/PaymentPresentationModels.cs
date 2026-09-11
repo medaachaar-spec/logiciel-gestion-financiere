@@ -60,6 +60,7 @@ public sealed class PaymentHistoryItemViewModel
 {
     internal PaymentHistoryItemViewModel(PaymentHistoryData item)
     {
+        PaymentId = item.PaymentId;
         PaymentReference = item.PaymentReference;
         PaymentTimestamp = $"{item.PaymentDate:dd/MM/yyyy} {item.PaymentCreatedAtUtc.ToLocalTime():HH:mm}";
         PaymentMethod = PaymentLabels.FormatPaymentMethod(item.PaymentMethod);
@@ -67,6 +68,8 @@ public sealed class PaymentHistoryItemViewModel
         CumulativePaidAmount = MoneyFormatter.FormatMinor(item.CumulativePaidAmountMinor);
         RemainingAfterPayment = MoneyFormatter.FormatMinor(item.RemainingAfterPaymentMinor);
     }
+
+    public long PaymentId { get; }
 
     public string PaymentReference { get; }
     public string PaymentTimestamp { get; }
