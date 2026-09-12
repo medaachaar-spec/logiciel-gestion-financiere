@@ -74,11 +74,98 @@
                 <TextBlock Margin="0,20,0,8"
                            Text="Mot de passe"
                            Style="{StaticResource FieldLabelTextStyle}" />
-                <PasswordBox x:Name="PasswordInput"
-                              Height="46"
+                <Grid Height="46">
+                    <PasswordBox x:Name="PasswordInput"
+                                 Padding="12,0,48,0"
+                                 TabIndex="1"
+                                 Style="{StaticResource InputPasswordBoxStyle}"
+                                 AutomationProperties.Name="Mot de passe" />
+                    <TextBox x:Name="VisiblePasswordInput"
+                             Padding="12,0,48,0"
                              TabIndex="1"
-                             Style="{StaticResource InputPasswordBoxStyle}"
-                             AutomationProperties.Name="Mot de passe" />
+                             Style="{StaticResource InputTextBoxStyle}"
+                             Visibility="Collapsed"
+                             AutomationProperties.Name="Mot de passe visible" />
+                    <ToggleButton x:Name="PasswordVisibilityToggle"
+                                  Width="38"
+                                  Height="38"
+                                  Margin="0,4,4,4"
+                                  Padding="0"
+                                  HorizontalAlignment="Right"
+                                  VerticalAlignment="Stretch"
+                                  Panel.ZIndex="1"
+                                  TabIndex="3"
+                                  IsChecked="False"
+                                  Focusable="True"
+                                  IsTabStop="True"
+                                  Background="Transparent"
+                                  Foreground="{StaticResource TextSecondaryBrush}"
+                                  BorderThickness="0"
+                                  Cursor="Hand"
+                                  ToolTip="Afficher le mot de passe"
+                                  AutomationProperties.Name="Afficher le mot de passe"
+                                  Checked="PasswordVisibilityToggle_OnChecked"
+                                  Unchecked="PasswordVisibilityToggle_OnUnchecked">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="ToggleSurface"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="Transparent"
+                                        BorderThickness="1"
+                                        CornerRadius="7">
+                                    <Grid Width="18" Height="18"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center">
+                                        <Grid x:Name="ShowPasswordIcon">
+                                            <Path Data="M1,9 C3.8,4.6 6.2,3 9,3 C11.8,3 14.2,4.6 17,9 C14.2,13.4 11.8,15 9,15 C6.2,15 3.8,13.4 1,9 Z"
+                                                  Fill="Transparent"
+                                                  Stroke="{TemplateBinding Foreground}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineJoin="Round" />
+                                            <Ellipse Width="5" Height="5"
+                                                     Fill="Transparent"
+                                                     Stroke="{TemplateBinding Foreground}"
+                                                     StrokeThickness="1.5" />
+                                        </Grid>
+                                        <Grid x:Name="HidePasswordIcon" Visibility="Collapsed">
+                                            <Path Data="M1,9 C3.8,4.6 6.2,3 9,3 C11.8,3 14.2,4.6 17,9 C14.2,13.4 11.8,15 9,15 C6.2,15 3.8,13.4 1,9 Z"
+                                                  Fill="Transparent"
+                                                  Stroke="{TemplateBinding Foreground}"
+                                                  StrokeThickness="1.5"
+                                                  StrokeLineJoin="Round" />
+                                            <Ellipse Width="5" Height="5"
+                                                     Fill="Transparent"
+                                                     Stroke="{TemplateBinding Foreground}"
+                                                     StrokeThickness="1.5" />
+                                            <Line X1="2" Y1="2" X2="16" Y2="16"
+                                                  Stroke="{TemplateBinding Foreground}"
+                                                  StrokeThickness="2"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round" />
+                                        </Grid>
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="ShowPasswordIcon" Property="Visibility" Value="Collapsed" />
+                                        <Setter TargetName="HidePasswordIcon" Property="Visibility" Value="Visible" />
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="ToggleSurface" Property="Background" Value="{StaticResource BackgroundBrush}" />
+                                        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="ToggleSurface" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                        <Setter TargetName="ToggleSurface" Property="BorderThickness" Value="2" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="ToggleSurface" Property="Opacity" Value="0.75" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                </Grid>
 
                 <Border Margin="0,18,0,0"
                         Padding="12,10"
@@ -93,7 +180,8 @@
                                TextWrapping="Wrap" />
                 </Border>
 
-                <Button Margin="0,26,0,0"
+                <Button x:Name="SignInButton"
+                        Margin="0,26,0,0"
                         Height="48"
                         TabIndex="2"
                         IsDefault="True"
