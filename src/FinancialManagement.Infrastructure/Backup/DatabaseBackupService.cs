@@ -143,26 +143,26 @@ internal sealed class DatabaseBackupService(
         }
     }
 
-    public Task<CreateDatabaseBackupResult> CreateExternalBackupAsync(
+    public async Task<CreateDatabaseBackupResult> CreateExternalBackupAsync(
         CreateExternalDatabaseBackupCommand command,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        var authorizationFailure = GetAuthorizationFailure();
+        var authorizationFailure = await GetAuthorizationFailureAsync(cancellationToken);
         if (authorizationFailure is not DatabaseBackupFailureReason.None)
         {
-            return Task.FromResult(CreateDatabaseBackupResult.Failed(authorizationFailure));
+            return CreateDatabaseBackupResult.Failed(authorizationFailure);
         }
 
         if (string.IsNullOrWhiteSpace(command.DestinationDirectory) ||
             !Directory.Exists(command.DestinationDirectory))
         {
-            return Task.FromResult(CreateDatabaseBackupResult.Failed(
-                DatabaseBackupFailureReason.DestinationDirectoryNotFound));
+            return CreateDatabaseBackupResult.Failed(
+                DatabaseBackupFailureReason.DestinationDirectoryNotFound);
         }
 
-        return CreateBackupAsync(
+        return await CreateBackupAsync(
             Path.GetFullPath(command.DestinationDirectory),
             createDirectory: false,
             "Backup",
@@ -176,7 +176,9 @@ internal sealed class DatabaseBackupService(
         ArgumentNullException.ThrowIfNull(command);
 
         var initiatingUserId = currentUserSession.UserId;
-        var authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+        var authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+            initiatingUserId,
+            cancellationToken);
         if (authorizationFailure is not DatabaseBackupFailureReason.None)
         {
             return RestoreDatabaseBackupResult.Failed(authorizationFailure);
@@ -214,7 +216,9 @@ internal sealed class DatabaseBackupService(
 
         try
         {
-            authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+            authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+                initiatingUserId,
+                cancellationToken);
             if (authorizationFailure != DatabaseBackupFailureReason.None)
                 return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath);
 
@@ -271,7 +275,9 @@ internal sealed class DatabaseBackupService(
             await CheckpointAndCloseAsync(stagingPath, cancellationToken);
             DeleteSidecarsBestEffort(stagingPath);
             // Staging validation/migration may have outlived the initiating session.
-            authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+            authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+                initiatingUserId,
+                cancellationToken);
             if (authorizationFailure != DatabaseBackupFailureReason.None)
                 return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath);
 
@@ -295,7 +301,9 @@ internal sealed class DatabaseBackupService(
             }
 
             // PreRestore also awaits I/O. Recheck before touching live WAL/handles.
-            authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+            authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+                initiatingUserId,
+                cancellationToken);
             if (authorizationFailure != DatabaseBackupFailureReason.None)
                 return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath, preRestorePath);
 
@@ -311,8 +319,9 @@ internal sealed class DatabaseBackupService(
             rollbackPath = CreateUnusedPath(Path.GetDirectoryName(livePath)!, "RestoreRollback");
             try
             {
-                // Final commit gate: no await between authorization and replacement.
-                authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+                authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+                    initiatingUserId,
+                    cancellationToken);
                 if (authorizationFailure != DatabaseBackupFailureReason.None)
                     return RestoreDatabaseBackupResult.Failed(authorizationFailure, sourcePath, preRestorePath);
 
@@ -437,7 +446,9 @@ internal sealed class DatabaseBackupService(
         CancellationToken cancellationToken)
     {
         var initiatingUserId = currentUserSession.UserId;
-        var authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+        var authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+            initiatingUserId,
+            cancellationToken);
         if (authorizationFailure is not DatabaseBackupFailureReason.None)
         {
             return CreateDatabaseBackupResult.Failed(authorizationFailure);
@@ -446,7 +457,9 @@ internal sealed class DatabaseBackupService(
         await maintenanceLock.Semaphore.WaitAsync(cancellationToken);
         try
         {
-            authorizationFailure = ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken);
+            authorizationFailure = await ValidateMaintenanceAuthorizationAsync(
+                initiatingUserId,
+                cancellationToken);
             if (authorizationFailure is not DatabaseBackupFailureReason.None)
             {
                 return CreateDatabaseBackupResult.Failed(authorizationFailure);
@@ -464,7 +477,7 @@ internal sealed class DatabaseBackupService(
 
             return await CreateArtifactBackupAsync(destinationDirectory, nameKind,
                 requireActiveResponsible: false, cancellationToken,
-                () => ValidateMaintenanceAuthorization(initiatingUserId, cancellationToken));
+                () => ValidateMaintenanceAuthorizationAsync(initiatingUserId, cancellationToken));
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or SqliteException)
         {
@@ -516,7 +529,7 @@ internal sealed class DatabaseBackupService(
         string nameKind,
         bool requireActiveResponsible,
         CancellationToken cancellationToken,
-        Func<DatabaseBackupFailureReason>? validateBeforePublication = null,
+        Func<Task<DatabaseBackupFailureReason>>? validateBeforePublication = null,
         bool requireCurrentSchema = true)
     {
         var createdAtUtc = timeProvider.GetUtcNow();
@@ -545,8 +558,9 @@ internal sealed class DatabaseBackupService(
             await DatabaseBackupArtifact.WriteAsync(databasePath, pendingPath, createdAtUtc, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             var fileSize = new FileInfo(pendingPath).Length;
-            var publicationAuthorizationFailure = validateBeforePublication?.Invoke()
-                ?? DatabaseBackupFailureReason.None;
+            var publicationAuthorizationFailure = validateBeforePublication is null
+                ? DatabaseBackupFailureReason.None
+                : await validateBeforePublication();
             if (publicationAuthorizationFailure is not DatabaseBackupFailureReason.None)
                 return CreateDatabaseBackupResult.Failed(publicationAuthorizationFailure);
 
@@ -584,7 +598,7 @@ internal sealed class DatabaseBackupService(
             ? StartupDatabaseBackupResult.Succeeded(result.BackupPath, localBusinessDate)
             : StartupDatabaseBackupResult.Failed(result.FailureReason, localBusinessDate);
 
-    private DatabaseBackupFailureReason ValidateMaintenanceAuthorization(
+    private async Task<DatabaseBackupFailureReason> ValidateMaintenanceAuthorizationAsync(
         long? initiatingUserId,
         CancellationToken cancellationToken)
     {
@@ -596,15 +610,15 @@ internal sealed class DatabaseBackupService(
             if (currentUserId != initiatingUserId)
                 return DatabaseBackupFailureReason.Forbidden;
 
-            // This capability API is synchronous and reads the session only.
-            // Check cancellation and identity again in case either changed during it.
-            var failure = GetAuthorizationFailure();
+            var failure = await GetAuthorizationFailureAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (failure is not DatabaseBackupFailureReason.None)
+                return failure;
             if (currentUserSession.UserId is null)
                 return DatabaseBackupFailureReason.NotAuthenticated;
             if (currentUserSession.UserId != initiatingUserId)
                 return DatabaseBackupFailureReason.Forbidden;
-            return failure;
+            return DatabaseBackupFailureReason.None;
         }
         catch (OperationCanceledException)
         {
@@ -617,14 +631,17 @@ internal sealed class DatabaseBackupService(
         }
     }
 
-    private DatabaseBackupFailureReason GetAuthorizationFailure()
+    private async Task<DatabaseBackupFailureReason> GetAuthorizationFailureAsync(
+        CancellationToken cancellationToken)
     {
         if (!currentUserSession.IsAuthenticated)
         {
             return DatabaseBackupFailureReason.NotAuthenticated;
         }
 
-        return authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.BackupRestore)
+        return await authorizationService.CanAccessResponsibleCapabilityAsync(
+            ResponsibleCapability.BackupRestore,
+            cancellationToken)
             ? DatabaseBackupFailureReason.None
             : DatabaseBackupFailureReason.Forbidden;
     }

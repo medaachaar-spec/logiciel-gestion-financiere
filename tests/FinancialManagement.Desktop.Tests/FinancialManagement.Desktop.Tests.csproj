@@ -26,6 +26,8 @@
   <ItemGroup>
     <Compile Include="..\FinancialManagement.Tests\DashboardSnapshotTestDatabase.cs"
              Link="Infrastructure\DashboardSnapshotTestDatabase.cs" />
+    <Compile Include="..\FinancialManagement.Tests\SessionValidationCommandTestHelper.cs"
+             Link="Infrastructure\SessionValidationCommandTestHelper.cs" />
     <Compile Include="..\FinancialManagement.Tests\PartyCrudTestDatabase.cs"
              Link="Infrastructure\PartyCrudTestDatabase.cs" />
   </ItemGroup>

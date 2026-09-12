@@ -231,7 +231,8 @@ public sealed class PaymentObligationAuditFixTests
             await database.AuthenticateAsync(user);
             AssertCustomerIntegrityFailure(
                 await database.CustomerObligationReadService.GetPageAsync(new()),
-                await database.CustomerObligationReadService.GetDetailAsync(CustomerPaymentObligationTargetType.Sale, sale.Id));
+                await database.CustomerObligationReadService.GetDetailAsync(
+                    CustomerPaymentObligationTargetType.Sale, sale.Id));
         }
         else if (target == "customer-initial")
         {
@@ -359,6 +360,7 @@ public sealed class PaymentObligationAuditFixTests
         }
 
         await database.AuthenticateAsync(user);
+
         interceptor.Start(() =>
         {
             if (customer)
@@ -375,7 +377,9 @@ public sealed class PaymentObligationAuditFixTests
         {
             var page = await database.CustomerObligationReadService.GetPageAsync(
                 new(Status: PaymentObligationStatus.Outstanding));
+
             var item = Assert.Single(page.Items);
+
             Assert.True(page.Success);
             Assert.Equal(1, page.TotalCount);
             Assert.Equal(0, item.PaidAmountMinor);
@@ -385,7 +389,9 @@ public sealed class PaymentObligationAuditFixTests
         {
             var page = await database.SupplierObligationReadService.GetPageAsync(
                 new(Status: PaymentObligationStatus.Outstanding));
+
             var item = Assert.Single(page.Items);
+
             Assert.True(page.Success);
             Assert.Equal(1, page.TotalCount);
             Assert.Equal(0, item.PaidAmountMinor);
@@ -426,6 +432,7 @@ public sealed class PaymentObligationAuditFixTests
         }
 
         await database.AuthenticateAsync(user);
+
         interceptor.Start(() =>
         {
             if (customer)
@@ -441,7 +448,9 @@ public sealed class PaymentObligationAuditFixTests
         if (customer)
         {
             var detail = await database.CustomerObligationReadService.GetDetailAsync(
-                CustomerPaymentObligationTargetType.Sale, targetId);
+                CustomerPaymentObligationTargetType.Sale,
+                targetId);
+
             Assert.True(detail.Success);
             Assert.Equal(0, detail.Item!.PaidAmountMinor);
             Assert.Empty(detail.Item.History);
@@ -449,7 +458,9 @@ public sealed class PaymentObligationAuditFixTests
         else
         {
             var detail = await database.SupplierObligationReadService.GetDetailAsync(
-                SupplierPaymentObligationTargetType.Purchase, targetId);
+                SupplierPaymentObligationTargetType.Purchase,
+                targetId);
+
             Assert.True(detail.Success);
             Assert.Equal(0, detail.Item!.PaidAmountMinor);
             Assert.Empty(detail.Item.History);
@@ -464,9 +475,16 @@ public sealed class PaymentObligationAuditFixTests
         CustomerPaymentObligationPageResult page,
         CustomerPaymentObligationDetailResult detail)
     {
-        Assert.Equal(CustomerPaymentObligationReadFailureReason.DataIntegrityViolation, page.FailureReason);
+        Assert.Equal(
+            CustomerPaymentObligationReadFailureReason.DataIntegrityViolation,
+            page.FailureReason);
+
         Assert.Empty(page.Items);
-        Assert.Equal(CustomerPaymentObligationReadFailureReason.DataIntegrityViolation, detail.FailureReason);
+
+        Assert.Equal(
+            CustomerPaymentObligationReadFailureReason.DataIntegrityViolation,
+            detail.FailureReason);
+
         Assert.Null(detail.Item);
     }
 
@@ -474,9 +492,16 @@ public sealed class PaymentObligationAuditFixTests
         SupplierPaymentObligationPageResult page,
         SupplierPaymentObligationDetailResult detail)
     {
-        Assert.Equal(SupplierPaymentObligationReadFailureReason.DataIntegrityViolation, page.FailureReason);
+        Assert.Equal(
+            SupplierPaymentObligationReadFailureReason.DataIntegrityViolation,
+            page.FailureReason);
+
         Assert.Empty(page.Items);
-        Assert.Equal(SupplierPaymentObligationReadFailureReason.DataIntegrityViolation, detail.FailureReason);
+
+        Assert.Equal(
+            SupplierPaymentObligationReadFailureReason.DataIntegrityViolation,
+            detail.FailureReason);
+
         Assert.Null(detail.Item);
     }
 
@@ -501,17 +526,35 @@ internal sealed class SnapshotMutationInterceptor : DbCommandInterceptor
     {
         if (mutation is null)
         {
-            return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+            return base.ReaderExecutedAsync(
+                command,
+                eventData,
+                result,
+                cancellationToken);
+        }
+
+        if (SessionValidationCommandTestHelper.IsPersistedSessionValidation(command))
+        {
+            return base.ReaderExecutedAsync(
+                command,
+                eventData,
+                result,
+                cancellationToken);
         }
 
         var transactional = command.Transaction is not null;
         TransactionalReads.Add(transactional);
+
         if (transactional && !Mutated)
         {
             mutation();
             Mutated = true;
         }
 
-        return base.ReaderExecutedAsync(command, eventData, result, cancellationToken);
+        return base.ReaderExecutedAsync(
+            command,
+            eventData,
+            result,
+            cancellationToken);
     }
 }

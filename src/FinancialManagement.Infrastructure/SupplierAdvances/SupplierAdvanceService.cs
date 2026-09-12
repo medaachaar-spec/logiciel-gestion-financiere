@@ -91,6 +91,14 @@ internal sealed class SupplierAdvanceService(
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
+        if (!await authorizationService.CanAsync(
+                PermissionModule.SupplierPayments,
+                PermissionAction.Modify,
+                cancellationToken))
+        {
+            return Failed(ApplySupplierAdvanceFailureReason.Forbidden);
+        }
+
         var sourcePayment = await dbContext.SupplierPayments
             .AsNoTracking()
             .SingleOrDefaultAsync(

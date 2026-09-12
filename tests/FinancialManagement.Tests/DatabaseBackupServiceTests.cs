@@ -643,7 +643,8 @@ public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
         await File.WriteAllTextAsync(fixture.LivePath, "not a SQLite database");
         var result = await fixture.Service.CreateLocalBackupAsync();
         Assert.False(result.Success);
-        Assert.Empty(Directory.GetFileSystemEntries(fixture.BackupDirectory));
+        if (Directory.Exists(fixture.BackupDirectory))
+            Assert.Empty(Directory.GetFileSystemEntries(fixture.BackupDirectory));
     }
 
     [Fact]
@@ -1014,7 +1015,7 @@ public sealed partial class DatabaseBackupServiceTests(ITestOutputHelper output)
             Assert.Equal(1, await verification.Clients.CountAsync(client => client.Name == "Live marker"));
         }
 
-        private async Task<User> AddUserAsync(string username, UserRole role, bool active)
+        public async Task<User> AddUserAsync(string username, UserRole role, bool active)
         {
             var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
             var user = new User

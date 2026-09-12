@@ -2,6 +2,7 @@ using FinancialManagement.Application.Administration;
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Domain.Entities;
 using FinancialManagement.Domain.Enums;
+using FinancialManagement.Infrastructure.Authentication;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,7 +10,8 @@ namespace FinancialManagement.Infrastructure.Administration;
 
 internal sealed class UserAdministrationService(
     FinancialManagementDbContext dbContext,
-    ICurrentUserSession session,
+    CurrentUserSession session,
+    IPersistedSessionValidator sessionValidator,
     IPasswordHasher passwordHasher,
     TimeProvider timeProvider) : IUserAdministrationService
 {
@@ -82,11 +84,11 @@ internal sealed class UserAdministrationService(
                     && item.Role == UserRole.Responsable, cancellationToken))
                 return Failed(UserAdministrationFailureReason.LastActiveResponsible);
 
-            var now = timeProvider.GetUtcNow();
+            var now = NextSecurityUpdateTimestamp(user.UpdatedAtUtc);
             await dbContext.Users.Where(item => item.Id == userId).ExecuteUpdateAsync(setters =>
                 setters.SetProperty(item => item.IsActive, isActive).SetProperty(item => item.UpdatedAtUtc, now), cancellationToken);
             return UserAdministrationResult.Succeeded(userId);
-        }, cancellationToken);
+        }, cancellationToken, securityStateChangedUserId: userId);
 
     public Task<UserAdministrationResult> SetPermissionAsync(
         long userId, EmployeePermissionInput permission, CancellationToken cancellationToken = default)
@@ -126,22 +128,31 @@ internal sealed class UserAdministrationService(
         ExecuteWriteAsync(async () =>
         {
             if (string.IsNullOrEmpty(newPassword)) return Failed(UserAdministrationFailureReason.InvalidPassword);
-            if (!await dbContext.Users.AnyAsync(user => user.Id == userId, cancellationToken))
+            var user = await dbContext.Users.AsNoTracking()
+                .Where(user => user.Id == userId)
+                .Select(user => new { user.UpdatedAtUtc })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (user is null)
                 return Failed(UserAdministrationFailureReason.UserNotFound);
             var hash = passwordHasher.HashPassword(newPassword);
-            var now = timeProvider.GetUtcNow();
+            var now = NextSecurityUpdateTimestamp(user.UpdatedAtUtc);
             var updated = await dbContext.Users.Where(user => user.Id == userId).ExecuteUpdateAsync(setters =>
                 setters.SetProperty(user => user.PasswordHash, hash).SetProperty(user => user.UpdatedAtUtc, now), cancellationToken);
             return updated == 1 ? UserAdministrationResult.Succeeded(userId) : Failed(UserAdministrationFailureReason.UserNotFound);
-        }, cancellationToken);
+        }, cancellationToken, securityStateChangedUserId: userId);
 
     private async Task<UserAdministrationResult> ExecuteWriteAsync(
-        Func<Task<UserAdministrationResult>> operation, CancellationToken cancellationToken)
+        Func<Task<UserAdministrationResult>> operation,
+        CancellationToken cancellationToken,
+        long? securityStateChangedUserId = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!session.IsAuthenticated || session.UserId is null)
             return Failed(UserAdministrationFailureReason.NotAuthenticated);
-        var actorId = session.UserId;
+        var actorId = session.UserId.Value;
+        var actorState = session.CaptureSecurityState();
+        if (actorState is null)
+            return Failed(UserAdministrationFailureReason.NotAuthenticated);
         var connectionOpened = false;
         try
         {
@@ -157,10 +168,18 @@ internal sealed class UserAdministrationService(
             var result = await operation();
             if (result.Success)
             {
-                failure = await AuthorizeAsync(cancellationToken);
-                if (failure != UserAdministrationFailureReason.None) return Failed(failure);
-                if (session.UserId != actorId) return Failed(UserAdministrationFailureReason.Forbidden);
+                if (!session.IsAuthenticated)
+                    return Failed(UserAdministrationFailureReason.NotAuthenticated);
+                if (!session.Matches(actorState))
+                    return Failed(UserAdministrationFailureReason.Forbidden);
+                if (securityStateChangedUserId != actorId)
+                {
+                    failure = await AuthorizeAsync(cancellationToken);
+                    if (failure != UserAdministrationFailureReason.None) return Failed(failure);
+                }
                 await transaction.CommitAsync(cancellationToken);
+                if (securityStateChangedUserId == actorId)
+                    session.ClearIfMatches(actorState);
             }
             return result;
         }
@@ -183,11 +202,19 @@ internal sealed class UserAdministrationService(
 
     private async Task<UserAdministrationFailureReason> AuthorizeAsync(CancellationToken cancellationToken)
     {
-        if (!session.IsAuthenticated || session.UserId is not long userId)
+        if (!session.IsAuthenticated || session.UserId is null)
             return UserAdministrationFailureReason.NotAuthenticated;
-        return await dbContext.Users.AsNoTracking().AnyAsync(user => user.Id == userId
-            && user.IsActive && user.Role == UserRole.Responsable, cancellationToken)
-            ? UserAdministrationFailureReason.None : UserAdministrationFailureReason.Forbidden;
+        if (!await sessionValidator.IsCurrentSessionValidAsync(cancellationToken))
+            return UserAdministrationFailureReason.Forbidden;
+        return session.Role == UserRole.Responsable
+            ? UserAdministrationFailureReason.None
+            : UserAdministrationFailureReason.Forbidden;
+    }
+
+    private DateTimeOffset NextSecurityUpdateTimestamp(DateTimeOffset current)
+    {
+        var now = timeProvider.GetUtcNow();
+        return now > current ? now : current.AddTicks(1);
     }
 
     private static UserAdministrationResult Failed(UserAdministrationFailureReason reason) => UserAdministrationResult.Failed(reason);

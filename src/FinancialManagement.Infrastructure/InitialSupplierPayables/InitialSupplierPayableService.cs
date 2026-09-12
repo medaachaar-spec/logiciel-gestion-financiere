@@ -22,7 +22,9 @@ internal sealed class InitialSupplierPayableService(
         cancellationToken.ThrowIfCancellationRequested();
         if (!currentUserSession.IsAuthenticated || currentUserSession.UserId is null)
             return InitialSupplierPayableListResult.Failed(query, InitialSupplierPayableListFailureReason.NotAuthenticated);
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Administration))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken))
             return InitialSupplierPayableListResult.Failed(query, InitialSupplierPayableListFailureReason.Forbidden);
         if (query.PageNumber < 1 || ((long)query.PageNumber - 1) * query.PageSize > int.MaxValue)
             return InitialSupplierPayableListResult.Failed(query, InitialSupplierPayableListFailureReason.InvalidPageNumber);
@@ -32,6 +34,12 @@ internal sealed class InitialSupplierPayableService(
             return InitialSupplierPayableListResult.Failed(query, InitialSupplierPayableListFailureReason.InvalidSupplierId);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken))
+            return InitialSupplierPayableListResult.Failed(
+                query,
+                InitialSupplierPayableListFailureReason.Forbidden);
         var obligations = dbContext.InitialSupplierPayables.AsNoTracking();
         if (query.SupplierId.HasValue)
             obligations = obligations.Where(item => item.SupplierId == query.SupplierId.Value);
@@ -90,7 +98,9 @@ internal sealed class InitialSupplierPayableService(
                 command.InitialAmountMinor);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Administration))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken))
         {
             return CreateInitialSupplierPayableResult.Failed(
                 CreateInitialSupplierPayableFailureReason.Forbidden,
@@ -108,6 +118,17 @@ internal sealed class InitialSupplierPayableService(
         {
             return CreateInitialSupplierPayableResult.Failed(
                 CreateInitialSupplierPayableFailureReason.InvalidAmount,
+                command.InitialAmountMinor);
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return CreateInitialSupplierPayableResult.Failed(
+                CreateInitialSupplierPayableFailureReason.Forbidden,
                 command.InitialAmountMinor);
         }
 
@@ -138,6 +159,7 @@ internal sealed class InitialSupplierPayableService(
 
         dbContext.InitialSupplierPayables.Add(payable);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return CreateInitialSupplierPayableResult.Succeeded(
             payable.Id,

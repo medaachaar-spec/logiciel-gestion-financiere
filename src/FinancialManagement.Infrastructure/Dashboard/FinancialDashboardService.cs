@@ -31,15 +31,17 @@ internal sealed class FinancialDashboardService(
         ArgumentNullException.ThrowIfNull(query);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!currentUserSession.IsAuthenticated)
+        if (!currentUserSession.IsAuthenticated
+            || currentUserSession.UserId is not long initiatingUserId)
         {
             return FinancialDashboardResult.Failed(
                 query,
                 FinancialDashboardFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(
-                requiredCapability))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                requiredCapability,
+                cancellationToken))
         {
             return FinancialDashboardResult.Failed(
                 query,
@@ -75,6 +77,16 @@ internal sealed class FinancialDashboardService(
             await using var transaction = connection.BeginTransaction(deferred: true);
             await using var attachment = await dbContext.Database.UseTransactionAsync(
                 transaction, cancellationToken);
+            if (currentUserSession.UserId != initiatingUserId
+                || !await authorizationService.CanAccessResponsibleCapabilityAsync(
+                    requiredCapability,
+                    cancellationToken))
+            {
+                return FinancialDashboardResult.Failed(
+                    query,
+                    FinancialDashboardFailureReason.Forbidden);
+            }
+
             var result = await ReadSnapshotAsync(query, cancellationToken);
             if (result.Success)
             {

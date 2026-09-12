@@ -1,16 +1,28 @@
 using FinancialManagement.Application.Authentication;
 using FinancialManagement.Application.Authorization;
 using FinancialManagement.Domain.Enums;
+using FinancialManagement.Infrastructure.Authentication;
 using Microsoft.EntityFrameworkCore;
 
 namespace FinancialManagement.Infrastructure.Authorization;
 
 internal sealed class AuthorizationService(
     FinancialManagementDbContext dbContext,
-    ICurrentUserSession currentUserSession) : IAuthorizationService
+    CurrentUserSession currentUserSession,
+    IPersistedSessionValidator sessionValidator) : IAuthorizationService
 {
     private static readonly EffectiveModulePermission NoPermissions = new(false, false, false);
     private static readonly EffectiveModulePermission AllPermissions = new(true, true, true);
+
+    internal AuthorizationService(
+        FinancialManagementDbContext dbContext,
+        CurrentUserSession currentUserSession)
+        : this(
+            dbContext,
+            currentUserSession,
+            new PersistedSessionValidator(dbContext, currentUserSession))
+    {
+    }
 
     public async Task<bool> CanAsync(
         PermissionModule module,
@@ -38,7 +50,7 @@ internal sealed class AuthorizationService(
         CancellationToken cancellationToken = default)
     {
         if (!Enum.IsDefined(module)
-            || !currentUserSession.IsAuthenticated
+            || !await sessionValidator.IsCurrentSessionValidAsync(cancellationToken)
             || currentUserSession.UserId is not long userId
             || currentUserSession.Role is not UserRole role)
         {
@@ -75,5 +87,12 @@ internal sealed class AuthorizationService(
     public bool CanAccessResponsibleCapability(ResponsibleCapability capability) =>
         Enum.IsDefined(capability)
         && currentUserSession.IsAuthenticated
+        && currentUserSession.Role == UserRole.Responsable;
+
+    public async Task<bool> CanAccessResponsibleCapabilityAsync(
+        ResponsibleCapability capability,
+        CancellationToken cancellationToken = default) =>
+        Enum.IsDefined(capability)
+        && await sessionValidator.IsCurrentSessionValidAsync(cancellationToken)
         && currentUserSession.Role == UserRole.Responsable;
 }

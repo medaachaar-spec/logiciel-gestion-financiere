@@ -29,7 +29,19 @@ internal sealed class TreasuryService(
                 CreateTreasuryOpeningBalanceFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Treasury))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Treasury,
+                cancellationToken))
+        {
+            return CreateTreasuryOpeningBalanceResult.Failed(
+                CreateTreasuryOpeningBalanceFailureReason.Forbidden);
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Treasury,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
         {
             return CreateTreasuryOpeningBalanceResult.Failed(
                 CreateTreasuryOpeningBalanceFailureReason.Forbidden);
@@ -54,6 +66,7 @@ internal sealed class TreasuryService(
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (exception.InnerException is SqliteException sqlite
             && sqlite.SqliteExtendedErrorCode == 2067
@@ -85,7 +98,9 @@ internal sealed class TreasuryService(
                 CreateTreasuryTransferFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Treasury))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Treasury,
+                cancellationToken))
         {
             return CreateTreasuryTransferResult.Failed(
                 CreateTreasuryTransferFailureReason.Forbidden);
@@ -109,6 +124,16 @@ internal sealed class TreasuryService(
                 CreateTreasuryTransferFailureReason.SameAccount);
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Treasury,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return CreateTreasuryTransferResult.Failed(
+                CreateTreasuryTransferFailureReason.Forbidden);
+        }
+
         var createdAtUtc = timeProvider.GetUtcNow();
         var localDateTime = TimeZoneInfo.ConvertTime(createdAtUtc, timeProvider.LocalTimeZone);
         var transferDate = DateOnly.FromDateTime(localDateTime.DateTime);
@@ -126,6 +151,7 @@ internal sealed class TreasuryService(
 
         dbContext.TreasuryTransfers.Add(transfer);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return CreateTreasuryTransferResult.Succeeded(
             transfer.Id,
@@ -146,7 +172,9 @@ internal sealed class TreasuryService(
             return TreasurySummaryResult.Failed(TreasurySummaryFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Treasury))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Treasury,
+                cancellationToken))
         {
             return TreasurySummaryResult.Failed(TreasurySummaryFailureReason.Forbidden);
         }
@@ -155,6 +183,13 @@ internal sealed class TreasuryService(
         await using var transaction = dbContext.Database.CurrentTransaction is null
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
+
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Treasury,
+                cancellationToken))
+        {
+            return TreasurySummaryResult.Failed(TreasurySummaryFailureReason.Forbidden);
+        }
 
         await EnsurePersistedEnumsAreValidAsync(cancellationToken);
 

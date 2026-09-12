@@ -24,8 +24,7 @@ public sealed class FinancialDashboardSnapshotTests(ITestOutputHelper output)
             var before = await InterleaveAsync(db, 2, () => db.Dashboard.GetAsync(Query), () => db.CreateSaleAsync());
             AssertMetrics(before, 0, 0, 0, 0, 0, 0, 0, 0);
             AssertCommonSnapshot(db.Trace, 26);
-            Assert.Equal(1, db.Trace.Opens);
-            Assert.Equal(1, db.Trace.Closes);
+            AssertDashboardConnectionLifecycle(db.Trace);
             AssertReleased(db);
             AssertMetrics(await db.Dashboard.GetAsync(Query), 10000, 0, 4000, 0, 6000, 0, 4000, 0);
             AssertReleased(db);
@@ -54,12 +53,13 @@ public sealed class FinancialDashboardSnapshotTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public async Task Writer_before_first_select_is_visible_as_a_complete_post_write_snapshot()
+    public async Task Writer_before_snapshot_establishing_select_is_visible_as_a_complete_post_write_snapshot()
     {
         await using var db = await DashboardSnapshotTestDatabase.CreateAsync();
-        var result = await InterleaveAsync(db, 1, () => db.Dashboard.GetAsync(Query), () => db.CreateSaleAsync());
+        var result = await InterleaveAsync(db, 0, () => db.Dashboard.GetAsync(Query), () => db.CreateSaleAsync());
         AssertMetrics(result, 10000, 0, 4000, 0, 6000, 0, 4000, 0);
         AssertCommonSnapshot(db.Trace, 26);
+        AssertDashboardConnectionLifecycle(db.Trace);
         AssertReleased(db);
     }
 
@@ -259,6 +259,31 @@ public sealed class FinancialDashboardSnapshotTests(ITestOutputHelper output)
             Assert.Same(first.Transaction, read.Transaction);
             Assert.StartsWith("SELECT", read.Sql);
         });
+    }
+
+    private static void AssertDashboardConnectionLifecycle(SnapshotTrace trace)
+    {
+        // The first session check uses EF's implicit open/close. The second runs
+        // after the dashboard explicitly opens its connection and attaches its
+        // transaction; every financial read must use that same connection.
+        Assert.Equal(4, trace.SecurityReads.Count);
+        var beforeTransaction = trace.SecurityReads[0];
+        var inTransaction = trace.SecurityReads[1];
+        Assert.Null(beforeTransaction.Transaction);
+        Assert.Equal((1, 0), (beforeTransaction.Opens, beforeTransaction.Closes));
+        Assert.NotNull(inTransaction.Transaction);
+        Assert.Equal((2, 1), (inTransaction.Opens, inTransaction.Closes));
+        Assert.Same(beforeTransaction.Connection, inTransaction.Connection);
+        Assert.Same(inTransaction.Connection, trace.Reads[0].Connection);
+        Assert.Same(inTransaction.Transaction, trace.Reads[0].Transaction);
+        Assert.All(trace.SecurityReads.Skip(2), read =>
+        {
+            Assert.Same(inTransaction.Connection, read.Connection);
+            Assert.Same(inTransaction.Transaction, read.Transaction);
+            Assert.Equal((2, 1), (read.Opens, read.Closes));
+        });
+        Assert.Equal(2, trace.Opens);
+        Assert.Equal(2, trace.Closes);
     }
 
     private static void AssertReleased(DashboardSnapshotTestDatabase db)

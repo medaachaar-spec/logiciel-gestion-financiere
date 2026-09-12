@@ -54,6 +54,18 @@ internal sealed class ExpenseService(
                 command.AmountMinor);
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Expenses,
+                PermissionAction.Create,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return CreateExpenseResult.Failed(
+                CreateExpenseFailureReason.NotAuthorized,
+                command.AmountMinor);
+        }
+
         var category = await dbContext.ExpenseCategories
             .AsNoTracking()
             .Where(item => item.Id == command.ExpenseCategoryId)
@@ -124,6 +136,7 @@ internal sealed class ExpenseService(
 
         dbContext.Expenses.Add(expense);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return CreateExpenseResult.Succeeded(
             expense.Id,

@@ -181,7 +181,8 @@ public sealed class UserAdministrationServiceTests
         await db.Context.Users.Where(user => user.Id == owner.Id).ExecuteUpdateAsync(setters => setters.SetProperty(user => user.IsActive, false));
         Assert.True(db.Get<ICurrentUserSession>().IsAuthenticated);
         Assert.Equal(UserAdministrationFailureReason.Forbidden, (await db.Administration.CreateEmployeeAsync(Command())).FailureReason);
-        Assert.Equal(UserAdministrationFailureReason.Forbidden, (await db.Administration.GetUsersAsync()).FailureReason);
+        Assert.Equal(UserAdministrationFailureReason.NotAuthenticated, (await db.Administration.GetUsersAsync()).FailureReason);
+        Assert.False(db.Get<ICurrentUserSession>().IsAuthenticated);
         Assert.Single(await db.Context.Users.ToListAsync());
     }
 

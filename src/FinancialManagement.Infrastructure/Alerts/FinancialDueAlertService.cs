@@ -25,7 +25,7 @@ internal sealed class FinancialDueAlertService(
                 FinancialDueAlertsFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
                 ResponsibleCapability.GlobalDashboard))
         {
             return FinancialDueAlertsResult.Failed(

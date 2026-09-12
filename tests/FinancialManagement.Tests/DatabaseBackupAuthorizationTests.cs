@@ -213,8 +213,17 @@ public sealed partial class DatabaseBackupServiceTests
     public async Task Backup_QueuedBehindAnotherBackupRejectsInvalidatedInitiatingSession()
     {
         await using var fixture = await BackupFixture.CreateAsync(authenticate: true);
+        var secondUser = await fixture.AddUserAsync("second", UserRole.Responsable, active: true);
         var secondSession = new CurrentUserSession();
-        secondSession.SetUser(new AuthenticatedUser(42, "Second responsible", "second", UserRole.Responsable));
+        secondSession.SetUser(
+            new AuthenticatedUser(secondUser.Id, "second", "second", UserRole.Responsable),
+            SessionSecurityMarker.Create(
+                secondUser.Id,
+                secondUser.Username,
+                secondUser.Role,
+                secondUser.IsActive,
+                secondUser.PasswordHash,
+                secondUser.UpdatedAtUtc));
         var secondAuthorization = new AuthorizationService(fixture.Context, secondSession);
         var secondService = WithSession(fixture, secondSession, secondAuthorization);
         Task<CreateDatabaseBackupResult>? queued = null;

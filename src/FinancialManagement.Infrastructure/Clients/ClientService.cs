@@ -40,6 +40,15 @@ internal sealed class ClientService(
             return CreateClientResult.Failed(CreateClientFailureReason.InvalidName);
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Clients,
+                PermissionAction.Create,
+                cancellationToken))
+        {
+            return CreateClientResult.Failed(CreateClientFailureReason.NotAuthorized);
+        }
+
         var createdAtUtc = timeProvider.GetUtcNow();
         var client = new Client
         {
@@ -55,6 +64,7 @@ internal sealed class ClientService(
 
         dbContext.Clients.Add(client);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return CreateClientResult.Succeeded(client.Id);
     }
@@ -216,6 +226,15 @@ internal sealed class ClientService(
             return UpdateClientResult.Failed(UpdateClientFailureReason.InvalidName);
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Clients,
+                PermissionAction.Modify,
+                cancellationToken))
+        {
+            return UpdateClientResult.Failed(UpdateClientFailureReason.NotAuthorized);
+        }
+
         var client = await dbContext.Clients
             .SingleOrDefaultAsync(item => item.Id == command.ClientId, cancellationToken);
         if (client is null)
@@ -232,6 +251,7 @@ internal sealed class ClientService(
         client.UpdatedAtUtc = timeProvider.GetUtcNow();
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return UpdateClientResult.Succeeded(client.Id);
     }
@@ -247,7 +267,9 @@ internal sealed class ClientService(
             return DeleteClientResult.Failed(DeleteClientFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.PermanentDelete))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.PermanentDelete,
+                cancellationToken))
         {
             return DeleteClientResult.Failed(DeleteClientFailureReason.NotAuthorized);
         }
@@ -258,6 +280,12 @@ internal sealed class ClientService(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.PermanentDelete,
+                cancellationToken))
+        {
+            return DeleteClientResult.Failed(DeleteClientFailureReason.NotAuthorized);
+        }
         var client = await dbContext.Clients
             .SingleOrDefaultAsync(item => item.Id == clientId, cancellationToken);
         if (client is null)

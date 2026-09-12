@@ -40,6 +40,15 @@ internal sealed class SupplierService(
             return CreateSupplierResult.Failed(CreateSupplierFailureReason.InvalidName);
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Suppliers,
+                PermissionAction.Create,
+                cancellationToken))
+        {
+            return CreateSupplierResult.Failed(CreateSupplierFailureReason.NotAuthorized);
+        }
+
         var createdAtUtc = timeProvider.GetUtcNow();
         var supplier = new Supplier
         {
@@ -55,6 +64,7 @@ internal sealed class SupplierService(
 
         dbContext.Suppliers.Add(supplier);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return CreateSupplierResult.Succeeded(supplier.Id);
     }
@@ -216,6 +226,15 @@ internal sealed class SupplierService(
             return UpdateSupplierResult.Failed(UpdateSupplierFailureReason.InvalidName);
         }
 
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Suppliers,
+                PermissionAction.Modify,
+                cancellationToken))
+        {
+            return UpdateSupplierResult.Failed(UpdateSupplierFailureReason.NotAuthorized);
+        }
+
         var supplier = await dbContext.Suppliers
             .SingleOrDefaultAsync(item => item.Id == command.SupplierId, cancellationToken);
         if (supplier is null)
@@ -232,6 +251,7 @@ internal sealed class SupplierService(
         supplier.UpdatedAtUtc = timeProvider.GetUtcNow();
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return UpdateSupplierResult.Succeeded(supplier.Id);
     }
@@ -247,7 +267,9 @@ internal sealed class SupplierService(
             return DeleteSupplierResult.Failed(DeleteSupplierFailureReason.NotAuthenticated);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.PermanentDelete))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.PermanentDelete,
+                cancellationToken))
         {
             return DeleteSupplierResult.Failed(DeleteSupplierFailureReason.NotAuthorized);
         }
@@ -258,6 +280,12 @@ internal sealed class SupplierService(
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.PermanentDelete,
+                cancellationToken))
+        {
+            return DeleteSupplierResult.Failed(DeleteSupplierFailureReason.NotAuthorized);
+        }
         var supplier = await dbContext.Suppliers
             .SingleOrDefaultAsync(item => item.Id == supplierId, cancellationToken);
         if (supplier is null)

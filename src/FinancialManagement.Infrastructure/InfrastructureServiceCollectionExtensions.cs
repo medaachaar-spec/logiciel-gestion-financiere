@@ -63,6 +63,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<CurrentUserSession>();
         services.AddSingleton<ICurrentUserSession>(serviceProvider =>
             serviceProvider.GetRequiredService<CurrentUserSession>());
+        services.AddScoped<IPersistedSessionValidator, PersistedSessionValidator>();
         services.AddSingleton<IPasswordHasher, MicrosoftIdentityPasswordHasher>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddScoped<IApplicationInitializationService, ApplicationInitializationService>();

@@ -398,6 +398,15 @@ internal sealed class CustomerPaymentService(
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
+        if (!await authorizationService.CanAsync(
+                PermissionModule.CustomerPayments,
+                PermissionAction.Create,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return Failed(CreateCustomerPaymentFailureReason.Forbidden, command);
+        }
+
         var clientExists = await dbContext.Clients
             .AsNoTracking()
             .AnyAsync(client => client.Id == command.ClientId, cancellationToken);

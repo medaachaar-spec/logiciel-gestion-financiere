@@ -14,4 +14,9 @@ public interface IAuthorizationService
         CancellationToken cancellationToken = default);
 
     bool CanAccessResponsibleCapability(ResponsibleCapability capability);
+
+    Task<bool> CanAccessResponsibleCapabilityAsync(
+        ResponsibleCapability capability,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(CanAccessResponsibleCapability(capability));
 }

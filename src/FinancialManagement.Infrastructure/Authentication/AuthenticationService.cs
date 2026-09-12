@@ -40,7 +40,15 @@ internal sealed class AuthenticationService(
             user.Username,
             user.Role);
 
-        currentUserSession.SetUser(authenticatedUser);
+        currentUserSession.SetUser(
+            authenticatedUser,
+            SessionSecurityMarker.Create(
+                user.Id,
+                user.Username,
+                user.Role,
+                user.IsActive,
+                user.PasswordHash,
+                user.UpdatedAtUtc));
         return AuthenticationResult.Succeeded(authenticatedUser);
     }
 

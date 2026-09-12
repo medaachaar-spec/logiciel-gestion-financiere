@@ -188,6 +188,17 @@ internal sealed class PurchaseService(
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Purchases,
+                PermissionAction.Create,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return CreatePurchaseResult.Failed(
+                CreatePurchaseFailureReason.NotAuthorized,
+                command.TotalAmountMinor);
+        }
+
         var purchase = new Purchase
         {
             Reference = purchaseReference,

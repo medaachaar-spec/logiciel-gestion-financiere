@@ -203,6 +203,17 @@ internal sealed class SaleService(
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
+        if (!await authorizationService.CanAsync(
+                PermissionModule.Sales,
+                PermissionAction.Create,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return CreateSaleResult.Failed(
+                CreateSaleFailureReason.NotAuthorized,
+                command.TotalAmountMinor);
+        }
+
         var sale = new Sale
         {
             Reference = saleReference,

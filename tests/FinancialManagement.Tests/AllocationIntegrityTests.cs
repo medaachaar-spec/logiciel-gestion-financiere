@@ -223,7 +223,7 @@ public sealed class AllocationIntegrityTests
         var secondSource = mode == "target" ? db.Payment(1000) : source;
         var secondTarget = mode == "source" ? db.Target(initial, 1000) : target;
         using var firstProvider = db.NewProvider(gate);
-        using var secondProvider = db.NewProvider(gate);
+        using var secondProvider = db.NewProvider(gate, new SecondValidationAttemptInterceptor(gate));
         using var firstScope = firstProvider.CreateScope();
         using var secondScope = secondProvider.CreateScope();
         await db.PrepareAsync(firstScope.ServiceProvider);
@@ -242,7 +242,7 @@ public sealed class AllocationIntegrityTests
             second = StartWriter(() => db.WriteAsync(mode is "advance" or "source" or "target",
                 secondSource, secondTarget, 1000, amount,
                 secondScope.ServiceProvider));
-            await gate.SecondStarting.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await gate.SecondValidationAttempted.Task.WaitAsync(TimeSpan.FromSeconds(10));
         }
         finally
         {
@@ -300,20 +300,10 @@ public sealed class AllocationIntegrityTests
 
     private sealed class TransactionGate : DbTransactionInterceptor
     {
-        private int starts;
         public bool Armed { get; set; }
         public TaskCompletionSource FirstStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource SecondStarting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondValidationAttempted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public override ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
-            DbConnection connection, TransactionStartingEventData eventData,
-            InterceptionResult<DbTransaction> result, CancellationToken cancellationToken = default)
-        {
-            if (Armed && Interlocked.Increment(ref starts) == 2)
-                SecondStarting.TrySetResult();
-            return ValueTask.FromResult(result);
-        }
 
         public override async ValueTask<DbTransaction> TransactionStartedAsync(
             DbConnection connection, TransactionEndEventData eventData, DbTransaction result,
@@ -322,6 +312,21 @@ public sealed class AllocationIntegrityTests
             if (Armed && FirstStarted.TrySetResult())
                 await Release.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
             return result;
+        }
+    }
+
+    private sealed class SecondValidationAttemptInterceptor(TransactionGate gate) : DbCommandInterceptor
+    {
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData,
+            InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            // SEC-001 validates the second session before it can attempt to
+            // acquire the writer lock. Observe that invocation here, then let
+            // the first writer finish so both outcomes remain testable.
+            if (gate.Armed && SessionValidationCommandTestHelper.IsPersistedSessionValidation(command))
+                gate.SecondValidationAttempted.TrySetResult();
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
     }
 
@@ -443,11 +448,15 @@ public sealed class AllocationIntegrityTests
             }
         }
 
-        public ServiceProvider NewProvider(DbTransactionInterceptor? interceptor = null) =>
+        public ServiceProvider NewProvider(
+            DbTransactionInterceptor? interceptor = null,
+            DbCommandInterceptor? readInterceptor = null) =>
             db.NewProvider(services =>
             {
                 if (interceptor is not null)
                     services.AddDbContext<FinancialManagementDbContext>(options => options.AddInterceptors(interceptor));
+                if (readInterceptor is not null)
+                    services.AddDbContext<FinancialManagementDbContext>(options => options.AddInterceptors(readInterceptor));
             });
 
         public async Task PrepareAsync(IServiceProvider provider)

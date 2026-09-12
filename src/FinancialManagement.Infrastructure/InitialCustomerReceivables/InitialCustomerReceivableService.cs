@@ -22,7 +22,9 @@ internal sealed class InitialCustomerReceivableService(
         cancellationToken.ThrowIfCancellationRequested();
         if (!currentUserSession.IsAuthenticated || currentUserSession.UserId is null)
             return InitialCustomerReceivableListResult.Failed(query, InitialCustomerReceivableListFailureReason.NotAuthenticated);
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Administration))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken))
             return InitialCustomerReceivableListResult.Failed(query, InitialCustomerReceivableListFailureReason.Forbidden);
         if (query.PageNumber < 1 || ((long)query.PageNumber - 1) * query.PageSize > int.MaxValue)
             return InitialCustomerReceivableListResult.Failed(query, InitialCustomerReceivableListFailureReason.InvalidPageNumber);
@@ -32,6 +34,12 @@ internal sealed class InitialCustomerReceivableService(
             return InitialCustomerReceivableListResult.Failed(query, InitialCustomerReceivableListFailureReason.InvalidClientId);
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken))
+            return InitialCustomerReceivableListResult.Failed(
+                query,
+                InitialCustomerReceivableListFailureReason.Forbidden);
         var obligations = dbContext.InitialCustomerReceivables.AsNoTracking();
         if (query.ClientId.HasValue)
             obligations = obligations.Where(item => item.ClientId == query.ClientId.Value);
@@ -90,7 +98,9 @@ internal sealed class InitialCustomerReceivableService(
                 command.InitialAmountMinor);
         }
 
-        if (!authorizationService.CanAccessResponsibleCapability(ResponsibleCapability.Administration))
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken))
         {
             return CreateInitialCustomerReceivableResult.Failed(
                 CreateInitialCustomerReceivableFailureReason.Forbidden,
@@ -108,6 +118,17 @@ internal sealed class InitialCustomerReceivableService(
         {
             return CreateInitialCustomerReceivableResult.Failed(
                 CreateInitialCustomerReceivableFailureReason.InvalidAmount,
+                command.InitialAmountMinor);
+        }
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        if (!await authorizationService.CanAccessResponsibleCapabilityAsync(
+                ResponsibleCapability.Administration,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return CreateInitialCustomerReceivableResult.Failed(
+                CreateInitialCustomerReceivableFailureReason.Forbidden,
                 command.InitialAmountMinor);
         }
 
@@ -138,6 +159,7 @@ internal sealed class InitialCustomerReceivableService(
 
         dbContext.InitialCustomerReceivables.Add(receivable);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return CreateInitialCustomerReceivableResult.Succeeded(
             receivable.Id,

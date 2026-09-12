@@ -398,6 +398,15 @@ internal sealed class SupplierPaymentService(
         await using var transaction = await dbContext.Database
             .BeginTransactionAsync(cancellationToken);
 
+        if (!await authorizationService.CanAsync(
+                PermissionModule.SupplierPayments,
+                PermissionAction.Create,
+                cancellationToken)
+            || currentUserSession.UserId != userId)
+        {
+            return Failed(CreateSupplierPaymentFailureReason.Forbidden, command);
+        }
+
         var supplierExists = await dbContext.Suppliers
             .AsNoTracking()
             .AnyAsync(supplier => supplier.Id == command.SupplierId, cancellationToken);

@@ -1189,7 +1189,10 @@ internal sealed class CountingDbCommandInterceptor : DbCommandInterceptor
         CommandEventData eventData,
         InterceptionResult<DbDataReader> result)
     {
-        Increment();
+        if (!SessionValidationCommandTestHelper.IsPersistedSessionValidation(command))
+        {
+            Increment();
+        }
         return base.ReaderExecuting(command, eventData, result);
     }
 
@@ -1199,7 +1202,10 @@ internal sealed class CountingDbCommandInterceptor : DbCommandInterceptor
         InterceptionResult<DbDataReader> result,
         CancellationToken cancellationToken = default)
     {
-        Increment();
+        if (!SessionValidationCommandTestHelper.IsPersistedSessionValidation(command))
+        {
+            Increment();
+        }
         return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
     }
 
