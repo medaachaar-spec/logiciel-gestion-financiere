@@ -10,3 +10,4 @@ TestResults/
 *.db-journal
 Backups/
 Logs/
+artifacts/
