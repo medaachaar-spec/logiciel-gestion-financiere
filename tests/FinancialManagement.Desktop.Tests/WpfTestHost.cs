@@ -33,7 +33,10 @@ internal static class WpfTestHost
 
         private void Run()
         {
-            var app = new FinancialManagement.Desktop.App();
+            // Constructing a WPF Application queues its Startup callback. The
+            // dispatcher below therefore requires an explicit resource-only mode;
+            // otherwise App.OnStartup resolves and opens the production database.
+            var app = new FinancialManagement.Desktop.App(runProductionStartup: false);
             app.InitializeComponent();
             _dispatcher = Dispatcher.CurrentDispatcher;
             _ready.Set();

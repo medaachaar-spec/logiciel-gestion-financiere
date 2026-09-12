@@ -18,12 +18,32 @@ namespace FinancialManagement.Desktop;
 
 public partial class App : System.Windows.Application
 {
+    private readonly bool _runProductionStartup;
     private ServiceProvider? _serviceProvider;
+
+    public App()
+        : this(runProductionStartup: true)
+    {
+    }
+
+    internal App(bool runProductionStartup)
+    {
+        _runProductionStartup = runProductionStartup;
+    }
+
+    internal bool RunsProductionStartup => _runProductionStartup;
+    internal bool StartupCallbackObserved { get; private set; }
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        StartupCallbackObserved = true;
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        if (!_runProductionStartup)
+        {
+            return;
+        }
+
         ServiceProvider serviceProvider;
         FinancialDatabaseStartupResult startupResult;
 
