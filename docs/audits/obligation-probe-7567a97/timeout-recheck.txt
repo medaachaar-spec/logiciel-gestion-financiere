@@ -1,0 +1,10 @@
+Série de tests pour C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\bin\Debug\net10.0\FinancialManagement.Tests.dll (.NETCoreApp,Version=v10.0)
+Série de tests pour C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Desktop.Tests\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.Tests.dll (.NETCoreApp,Version=v10.0)
+Au total, 1 fichiers de test ont correspondu au modèle spécifié.
+Au total, 1 fichiers de test ont correspondu au modèle spécifié.
+Aucun test ne correspond au filtre testcase donné `FullyQualifiedName~Concurrent_employee_creations_with_same_username_return_controlled_results|FullyQualifiedName~Concurrent_writers_serialize_validation_and_commit_valid_aggregates` dans C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Desktop.Tests\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.Tests.dll
+Fichier de résultats : C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Desktop.Tests\TestResults\timeout-recheck_net10.0_20260911092651.trx
+
+Fichier de résultats : C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\TestResults\timeout-recheck_net10.0_20260911092713.trx
+
+Réussi!  - échec :     0, réussite :    41, ignorée(s) :     0, total :    41, durée : 22 s - FinancialManagement.Tests.dll (net10.0)

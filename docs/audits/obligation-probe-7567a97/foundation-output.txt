@@ -1,0 +1,51 @@
+[1/7] dotnet tool restore
+L'outil 'dotnet-ef' (version '10.0.11') a été restauré. Commandes disponibles : dotnet-ef
+
+La restauration a réussi.
+[2/7] dotnet restore
+  Identification des projets à restaurer...
+  Tous les projets sont à jour pour la restauration.
+[3/7] dotnet build FinancialManagement.sln
+  Identification des projets à restaurer...
+  Tous les projets sont à jour pour la restauration.
+  FinancialManagement.Domain -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Domain\bin\Debug\net10.0\FinancialManagement.Domain.dll
+  FinancialManagement.Application -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Application\bin\Debug\net10.0\FinancialManagement.Application.dll
+  FinancialManagement.Infrastructure -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Infrastructure\bin\Debug\net10.0\FinancialManagement.Infrastructure.dll
+  FinancialManagement.Desktop -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Desktop\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.dll
+  FinancialManagement.Tests -> C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\bin\Debug\net10.0\FinancialManagement.Tests.dll
+  FinancialManagement.Desktop.Tests -> C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Desktop.Tests\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.Tests.dll
+
+La génération a réussi.
+    0 Avertissement(s)
+    0 Erreur(s)
+
+Temps écoulé 00:00:02.75
+[4/7] dotnet test FinancialManagement.sln
+  Identification des projets à restaurer...
+  Tous les projets sont à jour pour la restauration.
+  FinancialManagement.Domain -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Domain\bin\Debug\net10.0\FinancialManagement.Domain.dll
+  FinancialManagement.Application -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Application\bin\Debug\net10.0\FinancialManagement.Application.dll
+  FinancialManagement.Infrastructure -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Infrastructure\bin\Debug\net10.0\FinancialManagement.Infrastructure.dll
+  FinancialManagement.Tests -> C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\bin\Debug\net10.0\FinancialManagement.Tests.dll
+  FinancialManagement.Desktop -> C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Desktop\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.dll
+Série de tests pour C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\bin\Debug\net10.0\FinancialManagement.Tests.dll (.NETCoreApp,Version=v10.0)
+Au total, 1 fichiers de test ont correspondu au modèle spécifié.
+  FinancialManagement.Desktop.Tests -> C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Desktop.Tests\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.Tests.dll
+Série de tests pour C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Desktop.Tests\bin\Debug\net10.0-windows10.0.19041\FinancialManagement.Desktop.Tests.dll (.NETCoreApp,Version=v10.0)
+Au total, 1 fichiers de test ont correspondu au modèle spécifié.
+
+Réussi!  - échec :     0, réussite :    16, ignorée(s) :     0, total :    16, durée : 15 s - FinancialManagement.Desktop.Tests.dll (net10.0)
+[xUnit.net 00:01:46.00]     FinancialManagement.Tests.AllocationIntegrityTests.Concurrent_writers_serialize_validation_and_commit_valid_aggregates(customer: False, initial: True, mode: "mixed", compatible: False) [FAIL]
+  Échoué FinancialManagement.Tests.AllocationIntegrityTests.Concurrent_writers_serialize_validation_and_commit_valid_aggregates(customer: False, initial: True, mode: "mixed", compatible: False) [24 s]
+  Message d'erreur :
+   System.TimeoutException : The operation has timed out.
+  Arborescence des appels de procédure :
+     at FinancialManagement.Tests.AllocationIntegrityTests.TransactionGate.TransactionStartedAsync(DbConnection connection, TransactionEndEventData eventData, DbTransaction result, CancellationToken cancellationToken) in C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\AllocationIntegrityTests.cs:line 323
+   at Microsoft.EntityFrameworkCore.Storage.RelationalConnection.BeginTransactionAsync(IsolationLevel isolationLevel, CancellationToken cancellationToken)
+   at Microsoft.EntityFrameworkCore.Storage.RelationalConnection.BeginTransactionAsync(CancellationToken cancellationToken)
+   at FinancialManagement.Infrastructure.SupplierAdvances.SupplierAdvanceService.ApplyAsync(ApplySupplierAdvanceCommand command, CancellationToken cancellationToken) in C:\Dev\audit-obligation-7567a97\src\FinancialManagement.Infrastructure\SupplierAdvances\SupplierAdvanceService.cs:line 91
+   at FinancialManagement.Tests.AllocationIntegrityTests.Fixture.WriteAsync(Boolean advance, Int64 source, Target target, Int64 paymentAmount, Int64 amount, IServiceProvider provider) in C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\AllocationIntegrityTests.cs:line 434
+   at FinancialManagement.Tests.AllocationIntegrityTests.Concurrent_writers_serialize_validation_and_commit_valid_aggregates(Boolean customer, Boolean initial, String mode, Boolean compatible) in C:\Dev\audit-obligation-7567a97\tests\FinancialManagement.Tests\AllocationIntegrityTests.cs:line 251
+--- End of stack trace from previous location ---
+
+Échoué!  - échec :     1, réussite :  1137, ignorée(s) :     0, total :  1138, durée : 3 m 35 s - FinancialManagement.Tests.dll (net10.0)

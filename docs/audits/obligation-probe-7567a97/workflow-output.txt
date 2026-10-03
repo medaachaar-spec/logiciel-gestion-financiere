@@ -1,0 +1,7 @@
+C:\Dev\audit-obligation-evidence-7567a97\Program.cs(88,31): warning EF1002: Method 'ExecuteSqlRaw' inserts interpolated strings directly into the SQL, without any protection against SQL injection. Consider using 'ExecuteSql' instead, which protects against SQL injection, or make sure that the value is sanitized and suppress the warning. [C:\Dev\audit-obligation-evidence-7567a97\Probe.csproj]
+Customer quick lock: {"IsTargetObligationLocked":true,"CanChangeCreateTarget":false,"Obligations":1,"ClearEnabled":false}
+Customer after double confirmation: {"Payments":1,"SuccessMessage":"Client : paiement enregistr\u00E9.","ListErrorMessage":null,"IsDetailVisible":true,"DetailPaidAmount":"5,00","DetailRemainingAmount":"5,00","History":1,"RowPaid":"5,00","RowRemaining":"5,00"}
+Customer stale target rejected: {"Payments":1,"SuccessMessage":null,"WorkflowErrorMessage":"V\u00E9rifiez les montants affect\u00E9s aux obligations.","IsCreateVisible":true,"IsDetailVisible":false}
+Supplier quick lock: {"IsTargetObligationLocked":true,"CanChangeCreateTarget":false,"Obligations":1,"ClearEnabled":false}
+Supplier after double confirmation: {"Payments":1,"SuccessMessage":"Fournisseur : paiement enregistr\u00E9.","ListErrorMessage":null,"IsDetailVisible":true,"DetailPaidAmount":"5,00","DetailRemainingAmount":"5,00","History":1,"RowPaid":"5,00","RowRemaining":"5,00"}
+Supplier stale target rejected: {"Payments":1,"SuccessMessage":null,"WorkflowErrorMessage":"V\u00E9rifiez les montants affect\u00E9s aux obligations.","IsCreateVisible":true,"IsDetailVisible":false}
